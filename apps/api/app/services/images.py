@@ -39,13 +39,13 @@ def sanitize(data: bytes) -> tuple[bytes, int, int, np.ndarray]:
     sniff(data)
     Image.MAX_IMAGE_PIXELS = 40_000_000  # decompression-bomb guard
     try:
-        img = Image.open(io.BytesIO(data))
-        img = ImageOps.exif_transpose(img)
+        img: Image.Image = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img) or img
         img = img.convert("RGB")
     except (UnidentifiedImageError, OSError, ValueError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Could not decode image") from exc
     if max(img.size) > s.max_image_dimension:
-        img.thumbnail((s.max_image_dimension, s.max_image_dimension), Image.LANCZOS)
+        img.thumbnail((s.max_image_dimension, s.max_image_dimension), Image.Resampling.LANCZOS)
     out = io.BytesIO()
     img.save(out, format="JPEG", quality=92, optimize=True)  # no exif passed → metadata stripped
     rgb = np.asarray(img)

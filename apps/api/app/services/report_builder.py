@@ -44,7 +44,7 @@ def _money(v: float, cur: str) -> str:
     if cur == "INR":
         digits = f"{v:,.0f}".replace(",", "")
         head, tail = digits[:-3], digits[-3:]
-        parts = []
+        parts: list[str] = []
         while len(head) > 2:
             parts.insert(0, head[-2:])
             head = head[:-2]

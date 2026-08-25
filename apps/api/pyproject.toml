@@ -41,6 +41,11 @@ select = ["E", "F", "I", "B", "UP"]
 "alembic/versions/*" = ["E501"]
 "tests/*" = ["E501"]
 
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true   # boto3 / reportlab / torch ship no stubs
+check_untyped_defs = true
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

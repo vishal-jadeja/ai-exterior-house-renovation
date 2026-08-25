@@ -1,6 +1,9 @@
-.PHONY: up down logs api web worker test lint seed migrate fmt
+.PHONY: up down logs infra api web worker test lint typecheck seed migrate fmt env
 
-up:            ## Start full stack (postgres, minio, api, worker, web)
+env:           ## Create .env from the example if missing
+	@test -f .env || cp .env.example .env
+
+up: env        ## Start full stack (postgres, minio, api, worker, web)
 	docker compose -f infra/docker-compose.yml up --build -d
 
 down:
@@ -9,7 +12,7 @@ down:
 logs:
 	docker compose -f infra/docker-compose.yml logs -f api worker web
 
-infra:         ## Only databases for local dev
+infra: env     ## Only databases for local dev
 	docker compose -f infra/docker-compose.yml up -d postgres minio
 
 api:           ## Run API locally (needs .venv)
@@ -31,7 +34,10 @@ test:
 	cd apps/api && pytest -q
 
 lint:
-	cd apps/api && ruff check . && cd ../web && pnpm lint
+	cd apps/api && ruff check . && ruff format --check . && cd ../web && pnpm lint
+
+typecheck:
+	cd apps/api && mypy app && cd ../web && pnpm exec tsc --noEmit
 
 fmt:
 	cd apps/api && ruff format . && ruff check --fix .

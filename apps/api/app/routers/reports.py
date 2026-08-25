@@ -5,13 +5,20 @@ from sqlalchemy import select
 
 from app.core.deps import DB, CurrentUser
 from app.core.ratelimit import limiter
-from app.models import Design, Estimate, Image, Job, Project, Report
+from app.models import Design, Image, Job, Project, Report
 from app.providers.storage import s3
 from app.routers.designs import OwnedDesign
+from app.routers.estimates import current_fingerprint, latest_estimate_row
 from app.schemas.report import ReportOut
 from app.services.jobs import enqueue
 
 router = APIRouter(tags=["reports"])
+
+
+async def _job_id(db: DB, r: Report) -> str | None:
+    return (
+        await db.execute(select(Job.id).where(Job.idempotency_key == f"report:{r.id}"))
+    ).scalar_one_or_none()
 
 
 async def _out(db: DB, r: Report, job_id: str | None = None) -> ReportOut:
@@ -20,18 +27,22 @@ async def _out(db: DB, r: Report, job_id: str | None = None) -> ReportOut:
         img = await db.get(Image, r.image_id)
         if img:
             o.url = s3.get_storage().presign(img.storage_key, filename="renovation-estimate.pdf")
-    o.job_id = job_id
+    # Always expose the job so a reloaded page can resume polling an in-flight report.
+    o.job_id = job_id or await _job_id(db, r)
     return o
 
 
 @router.post("/designs/{design_id}/report", response_model=ReportOut, status_code=202)
 @limiter.limit("6/minute")
 async def start_report(request: Request, design: OwnedDesign, db: DB, user: CurrentUser):
-    has_estimate = (
-        await db.execute(select(Estimate.id).where(Estimate.design_id == design.id).limit(1))
-    ).scalar_one_or_none()
-    if not has_estimate:
+    est = await latest_estimate_row(db, design.id)
+    if est is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Calculate an estimate first")
+    if est.payload.get("fingerprint") != await current_fingerprint(db, design):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Rates, regions or materials changed since the last estimate — recalculate first",
+        )
     report = Report(design_id=design.id, status="queued")
     db.add(report)
     await db.flush()
@@ -69,7 +80,4 @@ async def get_report(report_id: str, db: DB, user: CurrentUser):
     ).scalar_one_or_none()
     if owner != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Report not found")
-    job = (
-        await db.execute(select(Job.id).where(Job.idempotency_key == f"report:{r.id}"))
-    ).scalar_one_or_none()
-    return await _out(db, r, job)
+    return await _out(db, r)

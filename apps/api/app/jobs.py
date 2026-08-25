@@ -98,14 +98,21 @@ async def segment_job(db, job):
             counters[c.label] = counters.get(c.label, 0) + 1
             c.name = f"{HUMAN[c.label]} {counters[c.label]}"
 
-    # Replace previous model/gemini regions; user-drawn regions are preserved.
+    # Retire previous model/gemini regions; user-drawn regions are preserved. Soft-deactivate
+    # rather than delete: a hard delete cascades into design_assignments and silently destroys
+    # every material choice the user made on those regions.
     old = (
         await db.execute(
-            select(Region).where(Region.project_id == project.id, Region.source != "user")
+            select(Region).where(
+                Region.project_id == project.id,
+                Region.source != "user",
+                Region.is_active.is_(True),
+            )
         )
     ).scalars()
     for r in old:
-        await db.delete(r)
+        r.is_active = False
+        r.version += 1
     for c in candidates:
         db.add(
             Region(
@@ -309,7 +316,11 @@ async def report_job(db, job):
         regions = {
             r.id: r
             for r in (
-                await db.execute(select(Region).where(Region.project_id == project.id))
+                await db.execute(
+                    select(Region).where(
+                        Region.project_id == project.id, Region.is_active.is_(True)
+                    )
+                )
             ).scalars()
         }
         materials = {m.id: m for m in (await db.execute(select(Material))).scalars()}
@@ -326,11 +337,14 @@ async def report_job(db, job):
                         "description": m.description,
                     }
                 )
-        pdf = build_report(
+        original_jpeg = await storage.get(source.storage_key)
+        # reportlab + PIL are synchronous; keep the worker loop responsive (signals, etc.).
+        pdf = await asyncio.to_thread(
+            build_report,
             project_name=project.name,
             design_name=design.name,
             currency=estimate.currency,
-            original_jpeg=await storage.get(source.storage_key),
+            original_jpeg=original_jpeg,
             render_jpeg=render_jpeg,
             render_provider=render.provider_used if render else None,
             estimate=estimate.payload,

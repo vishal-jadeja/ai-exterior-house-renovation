@@ -19,7 +19,7 @@ class Quantity:
     base: float  # net surface (sqft or rft) before wastage
     wastage_pct: float
     with_wastage: float
-    quantity: float  # in quantity_unit
+    quantity: float  # in quantity_unit — what must be *purchased* (whole boxes for tiles)
     quantity_unit: str
     packs: int | None
     pack_label: str | None
@@ -44,26 +44,35 @@ def compute(material: dict, area_sqft: float, length_ft: float | None) -> Quanti
     pack_label = None
 
     if qunit == "litre":
-        qty = ww * coats / float(coverage or 100.0)
+        cov = float(coverage or 100.0)
+        qty = ww * coats / cov
         packs = math.ceil(qty / PAINT_PACK_L) if qty > 0 else 0
         pack_label = f"{PAINT_PACK_L} L cans"
-        notes.append(f"{coats} coat(s) at {coverage:g} sqft/L per coat")
+        notes.append(f"{coats} coat(s) at {cov:g} sqft/L per coat")
     elif qunit == "kg":
-        qty = ww * coats / float(coverage or 25.0)
+        cov = float(coverage or 25.0)
+        qty = ww * coats / cov
         packs = math.ceil(qty / TEXTURE_BAG_KG) if qty > 0 else 0
         pack_label = f"{TEXTURE_BAG_KG} kg bags"
-        notes.append(f"coverage {coverage:g} sqft/kg")
+        notes.append(f"coverage {cov:g} sqft/kg")
     elif qunit == "piece":
-        qty = math.ceil(round(ww / float(piece or 1.0), 6)) if ww > 0 else 0
+        size = float(piece or 1.0)
+        needed = math.ceil(round(ww / size, 6)) if ww > 0 else 0
+        qty = needed
+        notes.append(f"piece size {size:g} sqft → {needed} pieces needed")
         if per_box:
-            packs = math.ceil(qty / per_box)
+            # Tiles/cladding are sold by the box: the purchased quantity is whole boxes.
+            packs = math.ceil(needed / per_box)
+            qty = packs * per_box
             pack_label = f"boxes of {per_box}"
-        notes.append(f"piece size {piece:g} sqft")
+            if qty > needed:
+                notes.append(f"rounded up to {packs} full boxes = {qty} pieces")
     elif qunit == "sheet":
-        qty = math.ceil(round(ww / float(piece or 32.0), 6)) if ww > 0 else 0
+        size = float(piece or 32.0)
+        qty = math.ceil(round(ww / size, 6)) if ww > 0 else 0
         packs = qty
         pack_label = "sheets"
-        notes.append(f"sheet size {piece:g} sqft")
+        notes.append(f"sheet size {size:g} sqft")
     elif qunit == "rft":
         qty = ww
         packs = math.ceil(base / RAILING_POST_SPACING_FT) + 1 if base > 0 else 0

@@ -13,6 +13,8 @@ from app.services.taxonomy import HUMAN
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["regions"])
 
+MIN_REGION_PX = 16.0  # smallest polygon area (px²) we accept from the editor
+
 
 async def _source_image(db: DB, project_id: str) -> Image:
     img = (
@@ -35,16 +37,16 @@ async def _source_image(db: DB, project_id: str) -> Image:
 @limiter.limit("10/minute")
 async def segment(request: Request, project: OwnedProject, db: DB, user: CurrentUser):
     img = await _source_image(db, project.id)
-    job = await enqueue(
+    # Status must be committed *with* (not after) the job row: a free worker can otherwise
+    # finish and write "segmented" before this handler's later commit overwrites it.
+    project.status = "segmenting"
+    return await enqueue(
         db,
         "segment",
         user.id,
         {"project_id": project.id, "image_id": img.id},
         idempotency_key=f"segment:{img.id}",
     )
-    project.status = "segmenting"
-    await db.commit()
-    return job
 
 
 @router.get("/regions", response_model=list[RegionOut])
@@ -75,6 +77,11 @@ async def put_regions(body: RegionsPut, project: OwnedProject, db: DB):
         xs, ys = [p[0] for p in poly], [p[1] for p in poly]
         bbox = [min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)]
         area = polygon_area(poly)
+        if area < MIN_REGION_PX or bbox[2] < 1 or bbox[3] < 1:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                f"Region '{item.name or item.label}' is too small or degenerate to measure",
+            )
         counters[item.label] = counters.get(item.label, 0) + 1
         name = item.name.strip() or f"{HUMAN[item.label]} {counters[item.label]}"
         if item.id and item.id in existing:
@@ -116,7 +123,9 @@ async def put_regions(body: RegionsPut, project: OwnedProject, db: DB):
         if rid not in seen and r.is_active:
             r.is_active = False
             r.version += 1
-    project.status = "regions_reviewed"
+    # Only advance the workflow; never pull a rendered/estimated project back a step.
+    if project.status in ("created", "uploaded", "segmenting", "segmented"):
+        project.status = "regions_reviewed"
     await db.commit()
     for r in out:
         await db.refresh(r)

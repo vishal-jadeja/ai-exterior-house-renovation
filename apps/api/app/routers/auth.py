@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import jwt
 from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import select
@@ -19,6 +21,8 @@ from app.schemas.auth import LoginIn, RegisterIn, TokenOut, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 REFRESH_COOKIE = "refresh_token"
+# Verified against when the email is unknown, so failed logins cost the same as real ones.
+_DUMMY_HASH = hash_password("not-a-real-password")
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -41,7 +45,8 @@ async def register(request: Request, response: Response, body: RegisterIn, db: D
     email = body.email.lower()
     if (await db.execute(select(User).where(User.email == email))).scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
-    user = User(email=email, password_hash=hash_password(body.password))
+    # Argon2 is deliberately slow (~100 ms): keep it off the event loop.
+    user = User(email=email, password_hash=await asyncio.to_thread(hash_password, body.password))
     db.add(user)
     await db.commit()
     _set_refresh_cookie(response, create_refresh_token(user.id, user.refresh_token_version))
@@ -55,7 +60,9 @@ async def login(request: Request, response: Response, body: LoginIn, db: DB):
         await db.execute(select(User).where(User.email == body.email.lower()))
     ).scalar_one_or_none()
     # Constant-ish time: always verify against a hash to avoid user enumeration by timing.
-    ok = verify_password(body.password, user.password_hash if user else hash_password("x" * 12))
+    ok = await asyncio.to_thread(
+        verify_password, body.password, user.password_hash if user else _DUMMY_HASH
+    )
     if not user or not ok:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
     _set_refresh_cookie(response, create_refresh_token(user.id, user.refresh_token_version))

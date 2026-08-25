@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from app.core.deps import DB, CurrentUser
 from app.core.ratelimit import limiter
-from app.models import Image, Job, Project, Render
+from app.models import Design, Image, Job, Project, Render
 from app.providers.storage import s3
 from app.routers.designs import OwnedDesign
 from app.schemas.render import RenderOut
@@ -14,13 +14,20 @@ from app.services.jobs import enqueue
 router = APIRouter(tags=["renders"])
 
 
+async def _job_id(db: DB, r: Render) -> str | None:
+    return (
+        await db.execute(select(Job.id).where(Job.idempotency_key == f"render:{r.id}"))
+    ).scalar_one_or_none()
+
+
 async def _out(db: DB, r: Render, job_id: str | None = None) -> RenderOut:
     o = RenderOut.model_validate(r)
     if r.image_id:
         img = await db.get(Image, r.image_id)
         if img:
             o.url = s3.get_storage().presign(img.storage_key)
-    o.job_id = job_id
+    # Always expose the job so a reloaded page can resume polling an in-flight render.
+    o.job_id = job_id or await _job_id(db, r)
     return o
 
 
@@ -57,16 +64,13 @@ async def get_render(render_id: str, db: DB, user: CurrentUser):
     r = await db.get(Render, render_id)
     if r is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Render not found")
-    design_project = (
+    owner_id = (
         await db.execute(
             select(Project.owner_id)
-            .join(Project.designs)
-            .where(Project.designs.any(id=r.design_id))
+            .join(Design, Design.project_id == Project.id)
+            .where(Design.id == r.design_id)
         )
     ).scalar_one_or_none()
-    if design_project != user.id:
+    if owner_id != user.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Render not found")
-    job = (
-        await db.execute(select(Job.id).where(Job.idempotency_key == f"render:{r.id}"))
-    ).scalar_one_or_none()
-    return await _out(db, r, job)
+    return await _out(db, r)

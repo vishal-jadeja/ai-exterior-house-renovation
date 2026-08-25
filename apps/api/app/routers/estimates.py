@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import json
+
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import DB, OwnedProject
-from app.models import Estimate, Image, Material, Project, RateCard, Region
+from app.models import Design, Estimate, Image, Material, Project, RateCard, Region
 from app.routers.designs import OwnedDesign
 from app.schemas.estimate import EstimateOut, MeasurementsIn, RateCardOut, RateCardPut, RateOut
 from app.schemas.project import ProjectOut
@@ -14,7 +19,7 @@ from app.services.estimation import estimate_design, material_dict, region_dict
 router = APIRouter(tags=["estimates"])
 
 
-async def _regions(db: DB, project_id: str) -> list[dict]:
+async def _regions(db: AsyncSession, project_id: str) -> list[dict]:
     rows = (
         await db.execute(
             select(Region).where(Region.project_id == project_id, Region.is_active.is_(True))
@@ -23,7 +28,7 @@ async def _regions(db: DB, project_id: str) -> list[dict]:
     return [region_dict(r) for r in rows]
 
 
-async def _image(db: DB, project_id: str) -> Image:
+async def _image(db: AsyncSession, project_id: str) -> Image:
     img = (
         (
             await db.execute(
@@ -40,7 +45,7 @@ async def _image(db: DB, project_id: str) -> Image:
     return img
 
 
-async def _rates(db: DB, project: Project) -> tuple[dict[str, dict], list[RateOut]]:
+async def _rates(db: AsyncSession, project: Project) -> tuple[dict[str, dict], list[RateOut]]:
     materials = (
         await db.execute(select(Material).order_by(Material.category, Material.name))
     ).scalars()
@@ -74,13 +79,59 @@ async def _rates(db: DB, project: Project) -> tuple[dict[str, dict], list[RateOu
     return rates, out
 
 
+def _fingerprint(
+    project: Project, regions: list[dict], assignments: list[tuple[str, str]], rates: dict
+) -> str:
+    """Hash of every input an estimate depends on. Stored in the payload; when the current
+    inputs hash differently the stored estimate is stale and must be recalculated."""
+    used = sorted({m for _, m in assignments})
+    doc = {
+        "measurements": [project.facade_width_ft, project.facade_height_ft, project.floors],
+        "currency": project.currency,
+        "regions": sorted((r["id"], r["label"], r["polygon"]) for r in regions),
+        "assignments": sorted(assignments),
+        "rates": {m: rates[m] for m in used if m in rates},
+    }
+    return hashlib.sha256(json.dumps(doc, sort_keys=True, default=str).encode()).hexdigest()
+
+
+async def current_fingerprint(db: AsyncSession, design: Design) -> str:
+    project = await db.get(Project, design.project_id)
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
+    regions = await _regions(db, project.id)
+    rates, _ = await _rates(db, project)
+    return _fingerprint(
+        project, regions, [(a.region_id, a.material_id) for a in design.assignments], rates
+    )
+
+
+async def latest_estimate_row(db: AsyncSession, design_id: str) -> Estimate | None:
+    return (
+        (
+            await db.execute(
+                select(Estimate)
+                .where(Estimate.design_id == design_id)
+                .order_by(Estimate.version.desc())
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+async def _with_stale(db: AsyncSession, design: Design, est: Estimate) -> EstimateOut:
+    out = EstimateOut.model_validate(est)
+    out.stale = est.payload.get("fingerprint") != await current_fingerprint(db, design)
+    return out
+
+
 @router.patch("/projects/{project_id}/measurements", response_model=ProjectOut)
 async def set_measurements(body: MeasurementsIn, project: OwnedProject, db: DB):
-    """Optional user measurements (spec 5.5). Recomputes and stores the project scale."""
-    project.facade_width_ft = body.facade_width_ft
-    project.facade_height_ft = body.facade_height_ft
-    if body.floors is not None:
-        project.floors = body.floors
+    """Optional user measurements (spec 5.5). Only fields present in the body are changed;
+    send an explicit null to clear one. Recomputes and stores the project scale."""
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(project, k, v)
     img = await _image(db, project.id)
     regions = await _regions(db, project.id)
     s = scale_estimator.estimate(
@@ -108,7 +159,8 @@ async def get_rate_card(project: OwnedProject, db: DB):
 
 @router.put("/projects/{project_id}/rate-card", response_model=RateCardOut)
 async def put_rate_card(body: RateCardPut, project: OwnedProject, db: DB):
-    """Upsert per-project rate overrides (spec 5.7 'modify material rates')."""
+    """Upsert per-project rate overrides (spec 5.7 'modify material rates'). Existing estimates
+    are not rewritten; they report `stale=true` until recalculated."""
     materials = set((await db.execute(select(Material.id))).scalars())
     existing = {
         rc.material_id: rc
@@ -148,43 +200,39 @@ async def reset_rate_card(project: OwnedProject, db: DB):
 
 @router.post("/designs/{design_id}/estimate", response_model=EstimateOut, status_code=201)
 async def create_estimate(design: OwnedDesign, db: DB):
-    """Compute (synchronously — it is pure arithmetic) and store a new estimate version."""
+    """Compute and store a new estimate version."""
     project = await db.get(Project, design.project_id)
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
     if not design.assignments:
         raise HTTPException(status.HTTP_409_CONFLICT, "Assign at least one material first")
     img = await _image(db, project.id)
     regions = await _regions(db, project.id)
     materials = {m.id: material_dict(m) for m in (await db.execute(select(Material))).scalars()}
     rates, _ = await _rates(db, project)
-    payload = estimate_design(
+    assignments = [(a.region_id, a.material_id) for a in design.assignments]
+    # Rasterises every region at full resolution: keep it off the event loop.
+    payload = await asyncio.to_thread(
+        estimate_design,
         project,
         regions,
-        [(a.region_id, a.material_id) for a in design.assignments],
+        assignments,
         materials,
         rates,
         img.width or 1000,
         img.height or 1000,
     )
+    payload["fingerprint"] = _fingerprint(project, regions, assignments, rates)
     s = payload["scale"]
     project.scale_ft_per_px, project.scale_method, project.scale_confidence = (
         s["ft_per_px"],
         s["method"],
         s["confidence"],
     )
-    last = (
-        (
-            await db.execute(
-                select(Estimate.version)
-                .where(Estimate.design_id == design.id)
-                .order_by(Estimate.version.desc())
-            )
-        )
-        .scalars()
-        .first()
-    )
+    last = await latest_estimate_row(db, design.id)
     est = Estimate(
         design_id=design.id,
-        version=(last or 0) + 1,
+        version=(last.version if last else 0) + 1,
         currency=project.currency,
         grand_total=payload["grand_total"],
         payload=payload,
@@ -193,22 +241,14 @@ async def create_estimate(design: OwnedDesign, db: DB):
     project.status = "estimated"
     await db.commit()
     await db.refresh(est)
-    return est
+    out = EstimateOut.model_validate(est)
+    out.stale = False
+    return out
 
 
 @router.get("/designs/{design_id}/estimate", response_model=EstimateOut)
 async def latest_estimate(design: OwnedDesign, db: DB):
-    est = (
-        (
-            await db.execute(
-                select(Estimate)
-                .where(Estimate.design_id == design.id)
-                .order_by(Estimate.version.desc())
-            )
-        )
-        .scalars()
-        .first()
-    )
+    est = await latest_estimate_row(db, design.id)
     if est is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No estimate yet")
-    return est
+    return await _with_stale(db, design, est)

@@ -33,12 +33,17 @@ def _groups(regions: list[RenderRegion]) -> dict[str, list[RenderRegion]]:
 
 def _mask(h: int, w: int, regions: list[RenderRegion], holes: list[np.ndarray]) -> np.ndarray:
     m = np.zeros((h, w), np.uint8)
-    for r in regions:
-        cv2.fillPoly(m, [np.array(r.polygon, np.int32)], 255)
-    if regions and regions[0].label in ("wall", "parapet", "pillar") and holes:
-        cut = np.zeros((h, w), np.uint8)
+    cut = np.zeros((h, w), np.uint8)
+    if holes:
         cv2.fillPoly(cut, [hp.astype(np.int32) for hp in holes if len(hp) >= 3], 255)
-        m[cut > 0] = 0
+    # Decide per region (not per group) whether openings are protected: one material can be
+    # applied to both a wall and a gate, and windows must never be painted over on the wall.
+    for r in regions:
+        rm = np.zeros((h, w), np.uint8)
+        cv2.fillPoly(rm, [np.array(r.polygon, np.int32)], 255)
+        if r.label in ("wall", "parapet", "pillar"):
+            rm[cut > 0] = 0
+        m |= rm
     return m
 
 

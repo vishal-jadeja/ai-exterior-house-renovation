@@ -63,9 +63,10 @@ class GeminiRefiner:
 
         client = genai.Client(api_key=self.api_key)
         prompt = PROMPT.format(labels=", ".join(LABELS), regions=json.dumps(regions))
+        contents: list = [types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"), prompt]
         resp = client.models.generate_content(
             model=self.model,
-            contents=[types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"), prompt],
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json", temperature=0.1, max_output_tokens=2048
             ),

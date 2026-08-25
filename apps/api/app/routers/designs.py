@@ -120,9 +120,10 @@ async def put_assignments(body: AssignmentsPut, design: OwnedDesign, db: DB):
         ).scalars()
     }
     materials = {m.id: m for m in (await db.execute(select(Material))).scalars()}
+    # Validate the whole request before touching the existing map, so a rejected save can
+    # never leave the design half-emptied.
     seen: set[str] = set()
-    for a in design.assignments:
-        await db.delete(a)
+    new: list[DesignAssignment] = []
     for item in body.assignments:
         r = regions.get(item.region_id)
         m = materials.get(item.material_id)
@@ -142,10 +143,14 @@ async def put_assignments(body: AssignmentsPut, design: OwnedDesign, db: DB):
         if r.id in seen:
             continue
         seen.add(r.id)
-        db.add(
+        new.append(
             DesignAssignment(
                 design_id=design.id, region_id=r.id, material_id=m.id, color_hex=item.color_hex
             )
         )
+    for a in design.assignments:
+        await db.delete(a)
+    await db.flush()
+    db.add_all(new)
     await db.commit()
     return await _load(db, design.id)

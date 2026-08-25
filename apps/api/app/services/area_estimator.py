@@ -1,17 +1,17 @@
 """Surface areas and lengths per region (spec 5.5). Pure numpy/OpenCV.
 
-wall/parapet/pillar : net area = polygon area − openings inside it (windows, doors, railings…)
-railing/roof_edge   : running length = bbox width
+wall/parapet        : net area = polygon area − openings inside it (windows, doors, railings…)
+railing/roof_edge/
+balcony             : running length along the strip + visible face area
 gate                : area (bbox) + length
-pillar              : visible height × estimated perimeter (assumes ~1 ft depth)
-A mild foreshortening factor compensates for surfaces seen at an angle.
+pillar              : visible height × (width + 2 × assumed 1 ft depth) — 3 faces
+A conservative foreshortening factor compensates for surfaces seen at an angle.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import cv2
 import numpy as np
 
 from app.services.region_mapper import rasterize
@@ -40,16 +40,61 @@ class SurfaceMeasure:
 
 
 def _foreshortening(poly: np.ndarray) -> float:
-    """Ratio of left/right (or top/bottom) edge lengths of the bounding quad → >1 when skewed."""
+    """Perspective correction for a surface photographed at an angle.
+
+    A rectangular wall seen obliquely projects to a trapezoid: its near vertical edge is taller
+    than its far one (or, for a surface above/below the camera, the near horizontal edge is
+    longer). We compare the vertical extent of the polygon's left-most and right-most bands and
+    the horizontal extent of its top/bottom bands; the larger of the two ratios drives a
+    conservative correction (half of the excess, capped) so a 45° view (~×1.41 true) gets ~×1.25.
+    Axis-aligned rectangles and near-symmetric blobs get exactly 1.0.
+    """
     if len(poly) < 4:
         return 1.0
-    rect = cv2.minAreaRect(poly.astype(np.float32))
-    (w, h), angle = rect[1], rect[2]
-    if w == 0 or h == 0:
+    xs, ys = poly[:, 0], poly[:, 1]
+    w, h = float(xs.max() - xs.min()), float(ys.max() - ys.min())
+    if w < 4 or h < 4:
         return 1.0
-    # A polygon whose min-area rect is rotated much from axis-aligned is likely viewed obliquely.
-    tilt = min(abs(angle) % 90, 90 - abs(angle) % 90) / 45.0  # 0 (aligned) … 1 (45°)
-    return float(min(MAX_FORESHORTEN, 1.0 + 0.4 * tilt))
+
+    def _extent(mask: np.ndarray, values: np.ndarray) -> float:
+        sel = values[mask]
+        return float(sel.max() - sel.min()) if len(sel) >= 2 else 0.0
+
+    band = 0.2
+    left = _extent(xs <= xs.min() + band * w, ys)
+    right = _extent(xs >= xs.max() - band * w, ys)
+    top = _extent(ys <= ys.min() + band * h, xs)
+    bottom = _extent(ys >= ys.max() - band * h, xs)
+
+    def _ratio(a: float, b: float) -> float:
+        lo, hi = min(a, b), max(a, b)
+        # Both bands must hold a real edge; otherwise the polygon is not quad-like here.
+        if lo < 0.25 * (h if a is left or a is right else w):
+            return 1.0
+        return hi / lo
+
+    ratio = max(_ratio(left, right), _ratio(top, bottom))
+    return float(min(MAX_FORESHORTEN, 1.0 + 0.5 * (ratio - 1.0)))
+
+
+def _polyline_length(poly: np.ndarray) -> float:
+    """Running length of a thin, possibly sloped strip (railing, roof edge, balcony front).
+
+    Takes the *shorter* of the two vertex chains between the polygon's left-most and right-most
+    points: for a strip both chains run along it, and the longer one also includes the end caps.
+    A horizontal 300×30 rectangle gives exactly 300; a parallelogram gives its slanted edge.
+    """
+    if len(poly) < 2:
+        return 0.0
+    i0, i1 = int(np.argmin(poly[:, 0])), int(np.argmax(poly[:, 0]))
+    if i0 == i1:
+        return 0.0
+    n = len(poly)
+    idx = [(i0 + k) % n for k in range((i1 - i0) % n + 1)]
+    chain_a = float(np.sum(np.linalg.norm(np.diff(poly[idx], axis=0), axis=1)))
+    idx = [(i1 + k) % n for k in range((i0 - i1) % n + 1)]
+    chain_b = float(np.sum(np.linalg.norm(np.diff(poly[idx], axis=0), axis=1)))
+    return min(chain_a, chain_b)
 
 
 def measure(
@@ -82,20 +127,23 @@ def measure(
             net = float((mask & ~openings).sum())
             h_ft = r["bbox"][3] * ft_per_px
             w_ft = max(r["bbox"][2] * ft_per_px, 0.5)
-            area = h_ft * (2 * (w_ft + PILLAR_DEPTH_FT)) * 0.75  # 3 faces visible/paintable
-            method = "height × perimeter (depth assumed 1 ft)"
-            notes.append("pillar depth assumed 1 ft; 3 of 4 faces counted")
-        elif label in ("railing", "roof_edge"):
+            # Front face (w) plus the two visible sides (assumed depth each): 3 of 4 faces.
+            area = h_ft * (w_ft + 2 * PILLAR_DEPTH_FT)
+            method = "height × (width + 2 × depth)"
+            notes.append(f"pillar depth assumed {PILLAR_DEPTH_FT:g} ft; 3 of 4 faces counted")
+        elif label in ("railing", "roof_edge", "balcony"):
+            # Running length along the strip (follows slope for stair/ramp railings) …
             net = gross
-            length = r["bbox"][2] * ft_per_px * fs
-            area = gross * ft_per_px**2
-            method = "bbox width × scale (running length)"
+            length = max(_polyline_length(poly), float(r["bbox"][2])) * ft_per_px
+            # … and the visible front face, for materials priced per area.
+            area = gross * ft_per_px**2 * fs
+            method = "polyline length × scale (running length); face area = pixel area × scale²"
         elif label == "gate":
             net = gross
             length = r["bbox"][2] * ft_per_px
             area = r["bbox"][2] * r["bbox"][3] * ft_per_px**2
             method = "bbox area × scale²"
-        else:  # window, door, balcony — informational only
+        else:  # window, door — informational only
             net = gross
             area = gross * ft_per_px**2 * fs
         if fs > 1.02:

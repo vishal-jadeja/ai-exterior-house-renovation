@@ -2,6 +2,7 @@ name: renovation
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: renov
       POSTGRES_PASSWORD: renov
@@ -16,6 +17,7 @@ services:
 
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -23,13 +25,14 @@ services:
     ports: ["9000:9000", "9001:9001"]
     volumes: [miniodata:/data]
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/minio/health/live || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   api:
     build: { context: .., dockerfile: infra/Dockerfile.api }
+    restart: unless-stopped
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://renov:renov@postgres:5432/renov
@@ -40,16 +43,26 @@ services:
       postgres: { condition: service_healthy }
       minio: { condition: service_healthy }
     volumes: [models:/models]
+    # Migrations + seed run here, so anything that depends on the schema must wait for
+    # this container's healthcheck, not merely for it to have started.
     command: sh -c "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
 
   worker:
     build: { context: .., dockerfile: infra/Dockerfile.api }
+    restart: unless-stopped
     env_file: ../.env
     environment:
       DATABASE_URL: postgresql+asyncpg://renov:renov@postgres:5432/renov
       S3_ENDPOINT_URL: http://minio:9000
       S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }
     volumes: [models:/models]
     command: python -m app.worker
 
@@ -58,8 +71,10 @@ services:
       context: ..
       dockerfile: infra/Dockerfile.web
       args: { NEXT_PUBLIC_API_URL: http://localhost:8000 }
+    restart: unless-stopped
     ports: ["3000:3000"]
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }
 
 volumes:
   pgdata:

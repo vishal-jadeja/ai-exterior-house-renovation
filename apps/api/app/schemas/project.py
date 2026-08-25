@@ -58,3 +58,5 @@ class QualityOut(BaseModel):
 class UploadOut(BaseModel):
     image: ImageOut
     quality: QualityOut
+    # Regions of the previous photo that were deactivated by this upload (0 on first upload).
+    replaced_regions: int = 0

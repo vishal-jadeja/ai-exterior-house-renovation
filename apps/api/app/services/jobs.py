@@ -4,6 +4,7 @@ and `import app.worker` share one HANDLERS dict."""
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Job
@@ -45,6 +46,19 @@ async def enqueue(
             old.idempotency_key = None
     job = Job(type=job_type, owner_id=owner_id, payload=payload, idempotency_key=idempotency_key)
     db.add(job)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Lost a race with a concurrent enqueue of the same key (double-click, two tabs):
+        # the other request's job is the one to return.
+        await db.rollback()
+        if not idempotency_key:
+            raise
+        winner = (
+            await db.execute(select(Job).where(Job.idempotency_key == idempotency_key))
+        ).scalar_one_or_none()
+        if winner is None:
+            raise
+        return winner
     await db.refresh(job)
     return job

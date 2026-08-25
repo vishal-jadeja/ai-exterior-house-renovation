@@ -10,6 +10,7 @@ Priority (most → least reliable):
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from statistics import median
 
@@ -46,8 +47,9 @@ def estimate(
     floors: int | None = None,
 ) -> ScaleResult:
     sil = _silhouette(regions)
-    sil_w = sil[0] if sil else float(image_w)
-    sil_h = sil[1] if sil else None
+    # Degenerate (zero-extent) silhouettes fall back to the image width so nothing divides by 0.
+    sil_w = sil[0] if sil and sil[0] >= 1 else float(max(image_w, 1))
+    sil_h = sil[1] if sil and sil[1] >= 1 else None
 
     if facade_width_ft or (facade_height_ft and sil_h):
         factors, notes = [], []
@@ -57,7 +59,10 @@ def estimate(
         if facade_height_ft and sil_h:
             factors.append(facade_height_ft / sil_h)
             notes.append(f"facade height entered by user = {facade_height_ft:g} ft")
-        return ScaleResult(sum(factors) / len(factors), "user_measurement", "high", notes)
+        # Areas scale with ft_per_px²: the geometric mean of the two factors preserves the
+        # user's width × height product exactly, unlike the arithmetic mean.
+        ft_per_px = math.prod(factors) ** (1.0 / len(factors))
+        return ScaleResult(ft_per_px, "user_measurement", "high", notes)
 
     doors = [
         r

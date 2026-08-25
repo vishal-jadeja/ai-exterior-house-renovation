@@ -99,7 +99,7 @@ def test_quantities():
     q = quantity_engine.compute(PAINT, 1000, None)
     assert q.with_wastage == 1050 and q.quantity == 21.0 and q.packs == 3  # 21 L → 3 × 10 L
     q = quantity_engine.compute(TILE, 100, None)
-    assert q.quantity == 55 and q.packs == 7  # 110 sqft / 2 = 55 pcs → 7 boxes
+    assert q.quantity == 56 and q.packs == 7  # 110 sqft / 2 = 55 pcs → 7 boxes = 56 bought
     q = quantity_engine.compute(RAILING, 999, 20)
     assert q.base == 20 and q.quantity == 20 and q.packs == 5  # posts every 5 ft + 1
 

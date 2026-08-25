@@ -4,13 +4,25 @@ jobs:
   api:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: apps/api } }
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_USER: renov, POSTGRES_PASSWORD: renov, POSTGRES_DB: renov }
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U renov" --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.11" }
-      - run: pip install ".[dev]"
+      - run: pip install ".[dev,report]"
       - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy app
       - run: pytest -q
+      # Migrations must apply cleanly to a fresh Postgres, then seeding must be idempotent.
+      - run: alembic upgrade head && python -m app.seed && python -m app.seed
+        env: { DATABASE_URL: "postgresql+asyncpg://renov:renov@localhost:5433/renov" }
   web:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: apps/web } }
@@ -22,3 +34,5 @@ jobs:
         with: { node-version: 22, cache: pnpm, cache-dependency-path: apps/web/pnpm-lock.yaml }
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint && pnpm exec tsc --noEmit
+      - run: pnpm build
+        env: { NEXT_PUBLIC_API_URL: http://localhost:8000 }

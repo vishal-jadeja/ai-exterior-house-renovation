@@ -47,5 +47,7 @@ class EstimateOut(BaseModel):
     grand_total: float
     payload: dict
     created_at: datetime
+    # True when regions, assignments, measurements or rates changed after this was computed.
+    stale: bool = False
 
     model_config = {"from_attributes": True}

@@ -99,7 +99,7 @@ def render_region(
         ).astype(np.float32)
         if r.category == "texture" and r.color_hex:
             tint = _hex(r.color_hex) / 255.0
-            base = base * tint[None, None, :] * 1.15
+            base = (base * tint[None, None, :] * 1.15).astype(np.float32)
     else:
         base = np.empty_like(orig, np.float32)
         base[:] = _hex(r.color_hex)

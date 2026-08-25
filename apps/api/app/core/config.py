@@ -5,10 +5,11 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ROOT_ENV = Path(__file__).resolve().parents[3] / ".env"
+_DEFAULT_JWT_SECRET = "change-me-in-production-please"
 
 
 def _csv(value: str) -> list[str]:
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://renov:renov@localhost:5433/renov"
 
     # Auth
-    jwt_secret: str = Field(default="change-me-in-production-please", min_length=16)
+    jwt_secret: str = Field(default=_DEFAULT_JWT_SECRET, min_length=16)
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
     refresh_token_days: int = 7
@@ -82,6 +83,22 @@ class Settings(BaseSettings):
     @property
     def is_prod(self) -> bool:
         return self.app_env == "prod"
+
+    @model_validator(mode="after")
+    def _prod_guard(self) -> Settings:
+        """Refuse to boot a production instance with development-only security settings."""
+        if not self.is_prod:
+            return self
+        problems = []
+        if self.jwt_secret == _DEFAULT_JWT_SECRET or len(self.jwt_secret) < 32:
+            problems.append("JWT_SECRET must be set to a random string of at least 32 characters")
+        if not self.cookie_secure:
+            problems.append("COOKIE_SECURE must be true (refresh cookie is sent over HTTPS only)")
+        if self.s3_secret_key == "minioadmin":
+            problems.append("S3_SECRET_KEY is the MinIO development default")
+        if problems:
+            raise ValueError("Unsafe production configuration: " + "; ".join(problems))
+        return self
 
 
 @lru_cache

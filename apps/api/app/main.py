@@ -51,9 +51,10 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url="/docs" if not settings.is_prod else None,
     redoc_url=None,
+    openapi_url="/openapi.json" if not settings.is_prod else None,
 )
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,

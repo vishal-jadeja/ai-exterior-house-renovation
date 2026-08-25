@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from functools import lru_cache
 
+import cv2
 import numpy as np
 
 from app.core.config import get_settings
@@ -50,13 +51,21 @@ def segment(rgb: np.ndarray, max_side: int = 1024) -> tuple[np.ndarray, np.ndarr
     work = rgb
     if scale < 1.0:
         work = np.asarray(
-            Image.fromarray(rgb).resize((int(w * scale), int(h * scale)), Image.BILINEAR)
+            Image.fromarray(rgb).resize((int(w * scale), int(h * scale)), Image.Resampling.BILINEAR)
         )
     inputs = processor(images=Image.fromarray(work), return_tensors="pt")
+    wh, ww = work.shape[:2]
     with _lock, torch.inference_mode():
         logits = model(**inputs).logits  # [1, C, h/4, w/4]
-        logits = F.interpolate(logits, size=(h, w), mode="bilinear", align_corners=False)
+        # Upsample to the *working* resolution only: C × full-res float logits for a 4k photo
+        # is ~1 GB and OOM-kills the worker. The argmax/confidence maps are cheap to resize.
+        logits = F.interpolate(logits, size=(wh, ww), mode="bilinear", align_corners=False)
         probs = torch.softmax(logits, dim=1)[0]
         conf, ade_idx = probs.max(dim=0)
-    label_map = lut[ade_idx.numpy()]
-    return label_map.astype(np.int16), conf.numpy().astype(np.float32)
+    idx = ade_idx.numpy().astype(np.int32)
+    conf_np = conf.numpy().astype(np.float32)
+    if (wh, ww) != (h, w):
+        idx = cv2.resize(idx, (w, h), interpolation=cv2.INTER_NEAREST).astype(np.int32)
+        conf_np = cv2.resize(conf_np, (w, h), interpolation=cv2.INTER_LINEAR).astype(np.float32)
+    label_map = lut[idx]
+    return label_map.astype(np.int16), conf_np

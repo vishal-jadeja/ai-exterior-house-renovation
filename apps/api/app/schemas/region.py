@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Literal
+import math
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -42,6 +43,8 @@ class RegionIn(BaseModel):
         for p in v:
             if len(p) != 2:
                 raise ValueError("polygon points must be [x, y]")
+            if not all(math.isfinite(c) for c in p):
+                raise ValueError("polygon coordinates must be finite numbers")
         return v
 
 
@@ -60,4 +63,4 @@ class JobOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-assert set(Label.__args__) == set(LABELS)
+assert set(get_args(Label)) == set(LABELS)
