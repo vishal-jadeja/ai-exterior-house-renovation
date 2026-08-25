@@ -7,8 +7,8 @@ Status is tracked by ticking the checklists; one commit per phase.
 |---|---|---|---|
 | 0 | Scaffold & infrastructure | 1h | done |
 | 1 | Auth, projects, upload, quality gate | 2.5h | done |
-| 2 | Structure identification & review editor | 3.5h | in progress |
-| 3 | Material catalog & designs | 2h | pending |
+| 2 | Structure identification & review editor | 3.5h | done |
+| 3 | Material catalog & designs | 2h | in progress |
 | 4 | Renovation visualization (render providers) | 4h | pending |
 | 5 | Area, quantity & cost estimation | 3h | pending |
 | 6 | Report generation | 1.5h | pending |

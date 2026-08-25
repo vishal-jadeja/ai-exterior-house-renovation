@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /srv
 COPY apps/api/pyproject.toml ./
-RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu torch
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision
 RUN mkdir -p app && touch app/__init__.py && pip install ".[ml,report,dev]"
 COPY apps/api/ ./
 RUN mkdir -p /models && useradd -m -u 1000 app && chown -R app:app /srv /models

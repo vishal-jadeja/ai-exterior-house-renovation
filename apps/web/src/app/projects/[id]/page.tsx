@@ -4,6 +4,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { UploadPanel } from "@/components/UploadPanel";
+import { StructureStep } from "@/components/StructureStep";
 import { api } from "@/lib/api";
 import type { ImageRec, Project } from "@/lib/types";
 
@@ -49,6 +50,12 @@ export default function ProjectPage() {
           <UploadPanel projectId={project.id} onUploaded={(img) => { setImage(img); load(); }} />
         </div>
       </section>
+
+      {image && (
+        <section className="mt-6">
+          <StructureStep projectId={project.id} image={image} />
+        </section>
+      )}
     </Shell>
   );
 }

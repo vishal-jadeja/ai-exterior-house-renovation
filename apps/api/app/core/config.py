@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     min_image_dimension: int = 640
 
     # AI providers (all optional; missing key => tier disabled)
-    segmentation_model: str = "nvidia/segformer-b2-finetuned-ade-512-512"
+    segmentation_model: str = "Xpitfire/segformer-finetuned-segments-cmp-facade"
     segmentation_enabled: bool = True
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-2.5-flash"

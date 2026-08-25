@@ -15,20 +15,11 @@ from app.core.config import get_settings
 from app.core.db import SessionLocal
 from app.core.logging import configure_logging, get_logger
 from app.models import Job
+from app.services.jobs import HANDLERS
 
 settings = get_settings()
 configure_logging(settings.log_level)
 log = get_logger("worker")
-
-HANDLERS: dict[str, object] = {}
-
-
-def register(job_type: str):
-    def deco(fn):
-        HANDLERS[job_type] = fn
-        return fn
-
-    return deco
 
 
 async def _claim_job() -> Job | None:
