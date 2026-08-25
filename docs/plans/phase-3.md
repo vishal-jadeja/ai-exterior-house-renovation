@@ -16,7 +16,7 @@ Let the user pick materials per region and keep several design variants side by 
 - [x] `GET /materials`
 - [x] `GET|POST /projects/{id}/designs`, `PATCH|DELETE /designs/{id}`, `POST /designs/{id}/clone`
 - [x] `PUT /designs/{id}/assignments` (bulk)
-- [x] Seed textures (CC0) in `seed/textures`, uploaded to storage on seed
+- [x] Procedural, license-free textures (`seed/gen_textures.py` → `seed/textures/`), uploaded to storage on seed
 - [x] Web design panel
 
 ## Acceptance criteria

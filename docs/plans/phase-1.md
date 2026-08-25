@@ -10,7 +10,8 @@ validated, sanitized, stored, and scored for usability with actionable guidance.
 - Rate limits on auth and upload endpoints.
 - Projects CRUD scoped to owner (404 on foreign IDs).
 - Upload: magic-byte check, size/dimension limits, Pillow re-encode (strips EXIF/GPS, kills
-  polyglots), store original + sanitized in MinIO/R2 under `projects/{id}/...`, presigned GET.
+  polyglots). Only the sanitized JPEG is persisted (raw upload bytes are discarded after
+  validation, never written to storage) in MinIO/R2 under `projects/{id}/...`, presigned GET.
 - Quality gate: blur (Laplacian variance), resolution, exposure, contrast → score + guidance list.
   Reject unusable images with a clear message; warn on borderline.
 - Web: auth pages, project list, project page with dropzone + quality feedback.
@@ -19,7 +20,7 @@ validated, sanitized, stored, and scored for usability with actionable guidance.
 - [x] `POST /auth/register|login|refresh|logout`, `GET /auth/me`
 - [x] `GET|POST /projects`, `GET|PATCH|DELETE /projects/{id}`
 - [x] `POST /projects/{id}/images` (multipart) → sanitized image + quality result
-- [x] `GET /projects/{id}/images/{image_id}/url` presigned
+- [x] `GET /projects/{id}/images/{image_id}` returns the image with a presigned `url` field
 - [x] Storage provider abstraction (S3-compatible)
 - [x] Web: login/register, projects list, upload with guidance
 - [x] Tests: auth flow, ownership isolation, quality gate on sharp vs blurred fixture
