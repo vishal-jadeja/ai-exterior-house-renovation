@@ -8,6 +8,7 @@ import { StructureStep } from "@/components/StructureStep";
 import { DesignStep } from "@/components/DesignStep";
 import { RenderStep } from "@/components/RenderStep";
 import { EstimateStep } from "@/components/EstimateStep";
+import { ReportStep } from "@/components/ReportStep";
 import { api } from "@/lib/api";
 import type { Design, ImageRec, Project, Region } from "@/lib/types";
 
@@ -77,6 +78,12 @@ export default function ProjectPage() {
       {design && (
         <section className="mt-6">
           <EstimateStep project={project} design={design} onProjectChanged={setProject} />
+        </section>
+      )}
+
+      {design && (
+        <section className="mt-6">
+          <ReportStep design={design} />
         </section>
       )}
     </Shell>

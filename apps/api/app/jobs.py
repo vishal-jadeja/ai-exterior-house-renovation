@@ -10,7 +10,7 @@ from PIL import Image as PILImage
 from sqlalchemy import select
 
 from app.core.logging import get_logger
-from app.models import Design, Image, Material, Project, Region, Render
+from app.models import Design, Estimate, Image, Material, Project, Region, Render, Report, User
 from app.providers.render.base import RenderRegion, RenderRequest
 from app.providers.render.chain import FallbackChainRenderer
 from app.providers.storage import s3
@@ -240,5 +240,120 @@ async def render_job(db, job):
     except Exception as exc:
         render.status = "failed"
         render.error = str(exc)[:1000]
+        await db.commit()
+        raise
+
+
+@register("report")
+async def report_job(db, job):
+    from sqlalchemy.orm import selectinload
+
+    from app.services.report_builder import build_report
+
+    report = await db.get(Report, job.payload["report_id"])
+    design = (
+        await db.execute(
+            select(Design)
+            .options(selectinload(Design.assignments))
+            .where(Design.id == job.payload["design_id"])
+        )
+    ).scalar_one_or_none()
+    if report is None or design is None:
+        raise RuntimeError("report or design vanished")
+    report.status = "running"
+    await db.commit()
+    try:
+        project = await db.get(Project, design.project_id)
+        owner = await db.get(User, project.owner_id)
+        storage = s3.get_storage()
+        source = (
+            (
+                await db.execute(
+                    select(Image)
+                    .where(Image.project_id == project.id, Image.kind == "sanitized")
+                    .order_by(Image.created_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+        estimate = (
+            (
+                await db.execute(
+                    select(Estimate)
+                    .where(Estimate.design_id == design.id)
+                    .order_by(Estimate.version.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if source is None or estimate is None:
+            raise RuntimeError("source image or estimate missing")
+        render = (
+            (
+                await db.execute(
+                    select(Render)
+                    .where(Render.design_id == design.id, Render.status == "done")
+                    .order_by(Render.created_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+        render_jpeg = None
+        if render and render.image_id:
+            rimg = await db.get(Image, render.image_id)
+            if rimg:
+                render_jpeg = await storage.get(rimg.storage_key)
+        regions = {
+            r.id: r
+            for r in (
+                await db.execute(select(Region).where(Region.project_id == project.id))
+            ).scalars()
+        }
+        materials = {m.id: m for m in (await db.execute(select(Material))).scalars()}
+        mats = []
+        for a in design.assignments:
+            r, m = regions.get(a.region_id), materials.get(a.material_id)
+            if r and m:
+                mats.append(
+                    {
+                        "region_name": r.name,
+                        "label": r.label,
+                        "material_name": m.name,
+                        "category": m.category,
+                        "description": m.description,
+                    }
+                )
+        pdf = build_report(
+            project_name=project.name,
+            design_name=design.name,
+            currency=estimate.currency,
+            original_jpeg=await storage.get(source.storage_key),
+            render_jpeg=render_jpeg,
+            render_provider=render.provider_used if render else None,
+            estimate=estimate.payload,
+            materials=mats,
+            owner_email=owner.email if owner else "",
+        )
+        key = f"projects/{project.id}/reports/{report.id}.pdf"
+        await storage.put(key, pdf, "application/pdf")
+        img = Image(
+            project_id=project.id,
+            kind="report",
+            storage_key=key,
+            content_type="application/pdf",
+            meta={"design_id": design.id, "estimate_version": estimate.version},
+        )
+        db.add(img)
+        await db.flush()
+        report.image_id = img.id
+        report.status = "done"
+        await db.commit()
+        return {"report_id": report.id, "bytes": len(pdf)}
+    except Exception as exc:
+        report.status = "failed"
+        report.error = str(exc)[:1000]
         await db.commit()
         raise

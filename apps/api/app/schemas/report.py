@@ -1,0 +1,17 @@
+from __future__ import annotations
+
+from datetime import datetime
+
+from pydantic import BaseModel
+
+
+class ReportOut(BaseModel):
+    id: str
+    design_id: str
+    status: str
+    error: str | None
+    url: str | None = None
+    job_id: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

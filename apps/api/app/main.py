@@ -24,6 +24,7 @@ from app.routers import (
     projects,
     regions,
     renders,
+    reports,
 )
 
 settings = get_settings()
@@ -86,3 +87,4 @@ app.include_router(materials.router)
 app.include_router(designs.router)
 app.include_router(renders.router)
 app.include_router(estimates.router)
+app.include_router(reports.router)
