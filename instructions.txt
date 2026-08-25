@@ -1,0 +1,167 @@
+AI-Based Exterior House Renovation & Cost Estimation System
+Problem Statement & Detailed Requirements
+1. Overview
+Homeowners who want to renovate or redesign the exterior of their house face major uncertainty before construction begins. They cannot clearly visualize the final result, cannot confidently select materials, and cannot accurately estimate the cost. As a result, renovation decisions are delayed, budgets are exceeded, and homeowners become heavily dependent on contractors and architects for even small design decisions.
+The objective of this project is to design and implement a digital platform that can:
+Accept exterior images of a residential building
+Generate redesigned visual options using selected construction materials
+Estimate material quantities required
+Calculate a detailed and transparent renovation cost
+The system should help a homeowner make decisions before construction begins.
+2. Core Problem
+Currently, house renovation planning suffers from three major issues:
+A. Visualization Gap
+A homeowner cannot realistically imagine how their house will look after renovation. Decisions like:
+wall cladding
+texture paint
+tiles
+railings
+color combinations
+are made based on guesswork or sample brochures, not on the actual house.
+B. Material Selection Confusion
+Users do not understand:
+which material suits their building structure
+where each material should be applied
+maintenance implications
+durability differences
+C. Cost Uncertainty
+Construction quotations are usually inconsistent because:
+area measurements are approximate
+wastage is arbitrary
+labor costs are unclear
+contractors estimate manually
+The system should reduce dependency on manual estimation and provide a structured cost calculation.
+3. Goal of the System
+The platform should allow a user to:
+Upload a photo of their house exterior
+Select design preferences and materials
+View a realistic redesigned version of their own house
+Obtain material quantity estimates
+Receive a detailed cost breakdown
+The system should function as a pre-construction planning assistant.
+4. Target Users
+Primary Users
+Individual homeowners planning renovation
+New house owners before painting or finishing
+Secondary Users
+Contractors
+Architects
+Builders
+Real estate consultants
+Material suppliers
+5. Functional Requirements
+5.1 Media Upload
+The system must allow users to upload:
+images of the building exterior
+The system should:
+extract clear usable views
+reject extremely low-quality input
+guide the user if the image is not usable
+5.2 Exterior Structure Identification
+After upload, the system should identify major structural components of the building such as:
+main walls
+windows
+balconies
+pillars/columns
+parapet walls
+gate areas
+roof edges
+The system should create a mapped representation of the building surface.
+The user should be able to:
+review the detected regions
+adjust or correct areas if necessary
+5.3 Design & Material Selection
+The platform should provide a material catalog.
+Users must be able to apply different materials to different parts of the house.
+Examples:
+Paint
+Stone cladding
+Tiles
+Texture finish
+Glass railing
+Metal railing
+Panels
+The system should allow:
+applying different materials to different sections
+previewing multiple combinations
+switching between designs
+5.4 Renovation Visualization
+The system must generate a visual output showing:
+the user’s actual house redesigned with the selected materials.
+The output should:
+preserve the original building structure
+realistically apply textures/colors/materials
+allow comparison between original and redesigned version
+5.5 Surface Area Estimation
+The system should estimate the approximate area of each building surface.
+This includes:
+wall surface area
+balcony surfaces
+pillar surfaces
+railing length/area
+cladding area
+The measurement does not need to be perfect but should be reasonably accurate for costing purposes.
+The system may use:
+reference assumptions (e.g., standard door/window size)
+perspective estimation
+user input (optional measurements)
+5.6 Material Quantity Calculation
+Based on calculated surface areas, the system should compute:
+required material quantity
+approximate wastage
+required coverage (e.g., paint coverage)
+Example outputs:
+paint area in square feet
+number of tiles required
+stone cladding quantity
+railing length
+5.7 Cost Estimation
+The system should generate a detailed cost estimate using predefined rates.
+The estimate must include:
+material cost
+labor cost
+total cost per category
+grand total
+The user should be able to:
+modify material rates
+view recalculated costs
+5.8 Report Generation
+The system should produce a downloadable report containing:
+original image
+redesigned image
+selected materials
+quantity calculations
+cost breakdown
+This report should be usable as a discussion document with contractors.
+6. Non-Functional Requirements
+The system should:
+Be usable by non-technical users
+Work on standard internet connections
+Provide results within a reasonable time
+Allow re-editing and saving projects
+Handle multiple users simultaneously
+7. Assumptions
+The building is residential and low-rise (independent house, bungalow, or small apartment)
+Only exterior renovation is considered
+Interior design is not included
+Structural engineering calculations are not required
+Cost estimates are advisory, not legally binding
+8. Constraints
+The solution should:
+not require professional architectural drawings
+not require specialized measuring equipment
+rely primarily on visual media input
+9. Expected Deliverables (from Candidate)
+The candidate is expected to design and implement:
+A system architecture
+A user workflow
+A functioning prototype demonstrating:
+image upload
+material application
+redesigned output
+area estimation
+cost estimation
+Documentation explaining:
+how the estimation works
+limitations of the system
+

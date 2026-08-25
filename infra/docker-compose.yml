@@ -1,0 +1,67 @@
+name: renovation
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: renov
+      POSTGRES_PASSWORD: renov
+      POSTGRES_DB: renov
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U renov"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: { context: .., dockerfile: infra/Dockerfile.api }
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://renov:renov@postgres:5432/renov
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
+    ports: ["8000:8000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    volumes: [models:/models]
+    command: sh -c "alembic upgrade head && python -m app.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build: { context: .., dockerfile: infra/Dockerfile.api }
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://renov:renov@postgres:5432/renov
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:9000
+    depends_on: [api]
+    volumes: [models:/models]
+    command: python -m app.worker
+
+  web:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile.web
+      args: { NEXT_PUBLIC_API_URL: http://localhost:8000 }
+    ports: ["3000:3000"]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  miniodata:
+  models:
