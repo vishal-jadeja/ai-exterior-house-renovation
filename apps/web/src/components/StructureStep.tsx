@@ -1,9 +1,13 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
-import { RegionEditor, type EditableRegion } from "@/components/RegionEditor";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { EditableRegion } from "@/components/RegionEditor";
 import { api, ApiError } from "@/lib/api";
 import { waitForJob } from "@/lib/jobs";
 import type { ImageRec, Job, Region } from "@/lib/types";
+
+// react-konva touches the canvas/window at module load time, so it can't render on the server.
+const RegionEditor = dynamic(() => import("@/components/RegionEditor").then((m) => m.RegionEditor), { ssr: false });
 
 type Props = { projectId: string; image: ImageRec; onRegionsChanged?: (regions: Region[]) => void };
 
@@ -13,6 +17,7 @@ export function StructureStep({ projectId, image, onRegionsChanged }: Props) {
   const [job, setJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
     const rs = await api<Region[]>(`/projects/${projectId}/regions`);
@@ -23,24 +28,41 @@ export function StructureStep({ projectId, image, onRegionsChanged }: Props) {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch-then-set
   useEffect(() => { load().catch(() => {}); }, [load]);
+  // Abort an in-flight detection poll if the component unmounts (e.g. the photo is replaced).
+  useEffect(() => () => abortRef.current?.abort(), []);
+  // Warn before leaving the page with unsaved region edits.
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirty]);
 
   async function detect() {
+    if (
+      regions.length > 0 &&
+      !window.confirm("Re-running detection replaces model-detected regions — materials assigned to them will be reset. Regions you added or edited yourself are kept. Continue?")
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
     setBusy(true);
     setMsg(null);
     try {
       const j = await api<Job>(`/projects/${projectId}/segment`, { method: "POST" });
       setJob(j);
-      const done = await waitForJob(j.id, setJob);
+      const done = await waitForJob(j.id, setJob, controller.signal);
       if (done.status === "failed") setMsg(`Detection failed: ${done.error ?? "unknown error"}`);
       else {
-        const res = done.result as { regions?: number; refined?: boolean } | null;
-        setMsg(`Detected ${res?.regions ?? 0} regions${res?.refined ? " (refined with Gemini)" : ""}. Review and adjust them below.`);
+        const res = done.result as { regions?: number; refined?: boolean; guidance?: string | null } | null;
+        setMsg(res?.guidance ?? `Detected ${res?.regions ?? 0} regions${res?.refined ? " (refined with Gemini)" : ""}. Review and adjust them below.`);
       }
       await load();
     } catch (err) {
       setMsg(err instanceof ApiError ? err.message : "Detection failed");
     } finally {
-      setBusy(false);
+      if (!controller.signal.aborted) setBusy(false);
       setJob(null);
     }
   }

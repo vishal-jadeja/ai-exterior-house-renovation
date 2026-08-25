@@ -6,8 +6,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /srv
 COPY apps/api/pyproject.toml ./
-RUN pip install --extra-index-url https://download.pytorch.org/whl/cpu torch torchvision
-RUN mkdir -p app && touch app/__init__.py && pip install ".[ml,report,dev]"
+# --index-url (not --extra-index-url): pin torch/torchvision to the CPU-only build so pip can't
+# resolve a multi-GB CUDA wheel from PyPI instead. --extra-index-url falls back to PyPI for their
+# transitive deps (numpy, jinja2, sympy, …), which the CPU index doesn't host.
+RUN pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple torch torchvision
+# Real source (not a stub package) before `pip install .`, so the installed distribution matches
+# what actually ships — a stub app/__init__.py here would build the layer from an empty package.
+COPY apps/api/app ./app
+RUN pip install ".[ml,report]"
 COPY apps/api/ ./
 RUN mkdir -p /models && useradd -m -u 1000 app && chown -R app:app /srv /models
 USER app

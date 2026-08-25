@@ -24,7 +24,8 @@ Turn the uploaded photo into a mapped representation of the facade the user can 
 - [x] Model weights cached in the `models` volume
 
 ## Acceptance criteria
-- Sample house → walls, windows, railing/balcony, pillars detected and drawn over the photo.
+- Sample house → walls, windows, railings, balconies, pillars detected and drawn over the photo
+  (the CMP model's `balcony` class maps straight to our `balcony` label, not `railing`).
 - User edits persist and survive reload; segmentation can be re-run without losing user regions
   (user regions kept, model regions replaced).
 

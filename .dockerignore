@@ -1,0 +1,8 @@
+.git
+**/.venv
+**/node_modules
+**/.next
+**/.hf_cache
+**/*.egg-info
+*.pdf
+scratch

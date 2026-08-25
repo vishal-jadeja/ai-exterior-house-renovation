@@ -53,13 +53,15 @@ export default function ProjectPage() {
           )}
         </div>
         <div>
-          <UploadPanel projectId={project.id} onUploaded={(img) => { setImage(img); load(); }} />
+          <UploadPanel projectId={project.id} hasRegions={regions.length > 0} onUploaded={(img) => { setImage(img); load(); }} />
         </div>
       </section>
 
       {image && (
         <section className="mt-6">
-          <StructureStep projectId={project.id} image={image} onRegionsChanged={setRegions} />
+          {/* key={image.id}: a new photo has a different pixel space, so remount rather than
+              reuse stale region/editor state from the previous one. */}
+          <StructureStep key={image.id} projectId={project.id} image={image} onRegionsChanged={setRegions} />
         </section>
       )}
 

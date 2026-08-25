@@ -36,39 +36,58 @@ export function DesignStep({ projectId, regions, onActiveDesign }: Props) {
     setDirty(false);
   }, [design]);
 
-  const surfaces = regions.filter((r) => r.label !== "window" && r.label !== "door" && r.label !== "roof_edge");
   const byLabel = (label: RegionLabel) => materials.filter((m) => m.applicable_labels.includes(label));
+  // window/door are informational only; roof_edge is hidden only while no material applies to it.
+  const surfaces = regions.filter(
+    (r) => r.label !== "window" && r.label !== "door" && (r.label !== "roof_edge" || byLabel("roof_edge").length > 0),
+  );
 
-  async function createDesign() {
+  /** Wraps a design action so any ApiError surfaces in `msg` instead of failing silently. */
+  function guard(fn: () => Promise<void>) {
+    return async () => {
+      setBusy(true);
+      setMsg(null);
+      try {
+        await fn();
+      } catch (err) {
+        setMsg(err instanceof ApiError ? err.message : "Action failed");
+      } finally {
+        setBusy(false);
+      }
+    };
+  }
+
+  const createDesign = guard(async () => {
     const name = `Design ${designs.length + 1}`;
     const d = await api<Design>(`/projects/${projectId}/designs`, { method: "POST", body: { name } });
     await load();
     setCurrent(d.id);
-  }
-  async function clone() {
+  });
+  const clone = guard(async () => {
     if (!design) return;
     const d = await api<Design>(`/designs/${design.id}/clone`, { method: "POST" });
     await load();
     setCurrent(d.id);
-  }
-  async function activate() {
+  });
+  const activate = guard(async () => {
     if (!design) return;
     await api(`/designs/${design.id}/activate`, { method: "POST" });
     await load();
-  }
-  async function rename() {
+  });
+  const rename = guard(async () => {
     if (!design) return;
     const name = window.prompt("Design name", design.name);
     if (!name) return;
     await api(`/designs/${design.id}`, { method: "PATCH", body: { name } });
     await load();
-  }
-  async function remove() {
+  });
+  const remove = guard(async () => {
     if (!design) return;
+    if (!window.confirm(`Delete "${design.name}"? This cannot be undone.`)) return;
     await api(`/designs/${design.id}`, { method: "DELETE" });
     setCurrent(null);
     await load();
-  }
+  });
   async function save() {
     if (!design) return;
     setBusy(true);
@@ -106,12 +125,12 @@ export function DesignStep({ projectId, regions, onActiveDesign }: Props) {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <h2 className="font-medium">3 · Materials &amp; design variants</h2>
         <div className="ml-auto flex flex-wrap gap-2 text-sm">
-          <button onClick={createDesign} className="rounded-md border px-3 py-1.5">New design</button>
+          <button onClick={createDesign} disabled={busy} className="rounded-md border px-3 py-1.5 disabled:opacity-40">New design</button>
           {design && (<>
-            <button onClick={clone} className="rounded-md border px-3 py-1.5">Duplicate</button>
-            <button onClick={rename} className="rounded-md border px-3 py-1.5">Rename</button>
-            <button onClick={activate} disabled={design.is_active} className="rounded-md border px-3 py-1.5 disabled:opacity-40">Set active</button>
-            <button onClick={remove} className="rounded-md border border-red-300 px-3 py-1.5 text-red-700">Delete</button>
+            <button onClick={clone} disabled={busy} className="rounded-md border px-3 py-1.5 disabled:opacity-40">Duplicate</button>
+            <button onClick={rename} disabled={busy} className="rounded-md border px-3 py-1.5 disabled:opacity-40">Rename</button>
+            <button onClick={activate} disabled={busy || design.is_active} className="rounded-md border px-3 py-1.5 disabled:opacity-40">Set active</button>
+            <button onClick={remove} disabled={busy} className="rounded-md border border-red-300 px-3 py-1.5 text-red-700 disabled:opacity-40">Delete</button>
             <button onClick={save} disabled={busy || !dirty} className="rounded-md bg-teal-700 px-3 py-1.5 text-white disabled:opacity-40">Save design</button>
           </>)}
         </div>

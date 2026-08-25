@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import math
 import uuid
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -53,6 +57,29 @@ app = FastAPI(
     redoc_url=None,
     openapi_url="/openapi.json" if not settings.is_prod else None,
 )
+
+
+def _sanitize_floats(obj):
+    """Replace NaN/Infinity with their repr so the error body can be JSON-encoded.
+
+    A validator that rejects a non-finite input (e.g. region.py's finiteness check) echoes the
+    rejected value back in `detail[].input`; Starlette's JSONResponse refuses to encode NaN/Inf,
+    which would otherwise turn a clean 422 into an unhandled 500.
+    """
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_floats(v) for v in obj]
+    return obj
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(status_code=422, content=_sanitize_floats(jsonable_encoder(exc.errors())))
+
+
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 app.add_middleware(SlowAPIMiddleware)

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Stage, Layer, Image as KImage, Line, Circle, Rect, Text, Group } from "react-konva";
 import type Konva from "konva";
 import { LABELS, LABEL_COLORS, LABEL_NAMES } from "@/lib/labels";
@@ -21,13 +21,19 @@ export const newKey = () => `new-${++keySeq}-${Math.random().toString(36).slice(
 
 function useImage(url: string) {
   const [img, setImg] = useState<HTMLImageElement | null>(null);
+  const [error, setError] = useState(false);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset before loading the new url
+    setImg(null);
+    setError(false);
     const el = new window.Image();
     el.crossOrigin = "anonymous";
     el.onload = () => setImg(el);
+    el.onerror = () => setError(true);
     el.src = url;
+    return () => { el.onload = null; el.onerror = null; };
   }, [url]);
-  return img;
+  return { img, error };
 }
 
 /**
@@ -35,7 +41,7 @@ function useImage(url: string) {
  * Vertices of the selected region are draggable; regions can be relabelled, deleted, or drawn as rectangles.
  */
 export function RegionEditor({ imageUrl, imageWidth, imageHeight, regions, onChange, readOnly }: Props) {
-  const img = useImage(imageUrl);
+  const { img, error: imgError } = useImage(imageUrl);
   const wrapRef = useRef<HTMLDivElement>(null);
   const [wrapW, setWrapW] = useState(800);
   const [selected, setSelected] = useState<string | null>(null);
@@ -45,8 +51,11 @@ export function RegionEditor({ imageUrl, imageWidth, imageHeight, regions, onCha
   const [newLabel, setNewLabel] = useState<RegionLabel>("wall");
   const [hidden, setHidden] = useState<Set<RegionLabel>>(new Set());
 
-  useEffect(() => {
+  // useLayoutEffect (not useEffect): measure and correct the width before paint, so the stage
+  // never flashes at the hardcoded 800px default.
+  useLayoutEffect(() => {
     if (!wrapRef.current) return;
+    setWrapW(wrapRef.current.clientWidth);
     const ro = new ResizeObserver((e) => setWrapW(e[0].contentRect.width));
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
@@ -105,6 +114,7 @@ export function RegionEditor({ imageUrl, imageWidth, imageHeight, regions, onCha
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_260px]">
       <div ref={wrapRef} className="overflow-hidden rounded-md border bg-zinc-100">
+        {imgError && <p className="p-4 text-sm text-red-600">Could not load photo. Try reloading the page.</p>}
         <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale}
           onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onTouchStart={onDown} onTouchMove={onMove} onTouchEnd={onUp}
           style={{ cursor: tool === "rect" ? "crosshair" : "default" }}>

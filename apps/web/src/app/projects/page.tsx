@@ -2,21 +2,34 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Shell } from "@/components/Shell";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { Project } from "@/lib/types";
 
 export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [name, setName] = useState("");
   const [currency, setCurrency] = useState("INR");
-  const load = () => api<Project[]>("/projects").then(setProjects).catch(() => {});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const load = () =>
+    api<Project[]>("/projects")
+      .then(setProjects)
+      .catch((err) => setError(err instanceof ApiError ? err.message : "Could not load projects"));
   useEffect(() => { load(); }, []);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
-    const p = await api<Project>("/projects", { method: "POST", body: { name, currency } });
-    setName("");
-    setProjects((ps) => [p, ...ps]);
+    setBusy(true);
+    setError(null);
+    try {
+      const p = await api<Project>("/projects", { method: "POST", body: { name, currency } });
+      setName("");
+      setProjects((ps) => [p, ...ps]);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not create project");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -28,8 +41,9 @@ export default function ProjectsPage() {
         <select className="rounded-md border px-2" value={currency} onChange={(e) => setCurrency(e.target.value)}>
           {["INR", "USD", "EUR", "GBP", "AED"].map((c) => <option key={c}>{c}</option>)}
         </select>
-        <button className="rounded-md bg-teal-700 px-4 py-2 text-white">New project</button>
+        <button disabled={busy} className="rounded-md bg-teal-700 px-4 py-2 text-white disabled:opacity-40">New project</button>
       </form>
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       <ul className="grid gap-3 sm:grid-cols-2">
         {projects.map((p) => (
           <li key={p.id}>

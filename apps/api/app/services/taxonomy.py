@@ -31,7 +31,7 @@ CMP_TO_LABEL: dict[str, str] = {
     "blind": "window",
     "door": "door",
     "shop": "door",
-    "balcony": "railing",
+    "balcony": "balcony",
     "pillar": "pillar",
     "cornice": "parapet",
 }

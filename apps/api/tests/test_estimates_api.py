@@ -81,3 +81,46 @@ async def test_measurements_raise_scale_confidence(client, storage):  # noqa: F8
     assert (
         await client.post(f"/designs/{d['id']}/estimate", headers=auth(other))
     ).status_code == 404
+
+
+async def test_estimate_stale_after_rate_change_report_409_while_stale(client, storage):  # noqa: F811
+    t, pid, regs = await _setup(client)
+    d = await _design(client, t, pid, regs)
+    e1 = (await client.post(f"/designs/{d['id']}/estimate", headers=auth(t))).json()
+    assert e1["stale"] is False
+    got = (await client.get(f"/designs/{d['id']}/estimate", headers=auth(t))).json()
+    assert got["stale"] is False
+
+    await client.put(
+        f"/projects/{pid}/rate-card",
+        json={
+            "rates": [
+                {
+                    "material_id": "paint-exterior-emulsion",
+                    "material_rate": 999,
+                    "labor_rate": 20,
+                }
+            ]
+        },
+        headers=auth(t),
+    )
+    stale = (await client.get(f"/designs/{d['id']}/estimate", headers=auth(t))).json()
+    assert stale["stale"] is True
+
+    r = await client.post(f"/designs/{d['id']}/report", headers=auth(t))
+    assert r.status_code == 409
+
+    e2 = (await client.post(f"/designs/{d['id']}/estimate", headers=auth(t))).json()
+    assert e2["stale"] is False and e2["version"] == 2
+
+
+async def test_patch_measurements_only_touches_sent_fields(client, storage):  # noqa: F811
+    t, pid, regs = await _setup(client)
+    r = await client.patch(
+        f"/projects/{pid}/measurements", json={"facade_width_ft": 40}, headers=auth(t)
+    )
+    assert r.status_code == 200 and r.json()["facade_width_ft"] == 40
+
+    r = await client.patch(f"/projects/{pid}/measurements", json={"floors": 2}, headers=auth(t))
+    assert r.status_code == 200
+    assert r.json()["floors"] == 2 and r.json()["facade_width_ft"] == 40

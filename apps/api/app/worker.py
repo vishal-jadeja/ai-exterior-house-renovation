@@ -66,10 +66,16 @@ async def _run_job(claimed: Job) -> None:
                 raise RuntimeError(f"no handler for job type {job.type}")
             result = await handler(db, job) or {}  # type: ignore[operator]
         except Exception as exc:  # noqa: BLE001 - job boundary
-            log.exception("job_failed", job_id=job.id, type=job.type, attempts=job.attempts)
-            # The handler may have left the session in a failed transaction: discard it so the
-            # bookkeeping commit below cannot itself raise and take the worker down.
+            # The handler may have left the session in a failed transaction (e.g. a flush that
+            # raised): rollback *before* touching any `job.*` attribute below. Those can be
+            # expired by the failed flush, and reloading an expired attribute on a session that
+            # still needs a rollback raises PendingRollbackError — which would skip the rest of
+            # this block and leave the job stuck "running" forever. `claimed` was loaded in a
+            # different, already-closed session, so its attributes are always safe to read.
             await db.rollback()
+            log.exception(
+                "job_failed", job_id=claimed.id, type=claimed.type, attempts=claimed.attempts
+            )
             job = await db.get(Job, claimed.id)
             if job is None:
                 return

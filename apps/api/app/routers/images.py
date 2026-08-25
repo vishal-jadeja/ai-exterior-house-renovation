@@ -38,7 +38,8 @@ async def list_images(project: OwnedProject, db: DB, kind: str | None = None):
 async def upload_image(
     request: Request, project: OwnedProject, db: DB, file: Annotated[UploadFile, File()]
 ):
-    limit = get_settings().max_upload_bytes
+    settings = get_settings()
+    limit = settings.max_upload_bytes
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > limit + 4096:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Image exceeds 10 MB")
@@ -52,7 +53,7 @@ async def upload_image(
     data = b"".join(chunks)
     # Decode/resize/re-encode and the blur/brightness analysis are CPU-bound: off the loop.
     jpeg, w, h, bgr = await asyncio.to_thread(imgsvc.sanitize, data)
-    quality = await asyncio.to_thread(assess, bgr)
+    quality = await asyncio.to_thread(assess, bgr, settings.min_image_dimension)
     if not quality.usable:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY,

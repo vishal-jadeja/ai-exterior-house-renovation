@@ -128,6 +128,9 @@ async def test_render_route_and_job(client, storage):  # noqa: F811
         and rs[0]["url"].startswith("http://fake/")
         and rs[0]["provider_used"] == "local"
     )
+    # a second design on the same project (regression for the ownership join returning one row
+    # per design and MultipleResultsFound-ing on scalar_one_or_none)
+    await client.post(f"/designs/{d['id']}/clone", headers=auth(t))
     other = await register(client, "b@example.com")
     assert (await client.get(f"/renders/{rs[0]['id']}", headers=auth(other))).status_code == 404
     assert (await client.get(f"/renders/{rs[0]['id']}", headers=auth(t))).status_code == 200

@@ -14,8 +14,8 @@ out/
 dist/
 *.log
 .DS_Store
-models/
 apps/api/.hf_cache/
+*.egg-info/
 *.pdf
 !docs/**/*.pdf
 scratch/

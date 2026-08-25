@@ -99,8 +99,6 @@ def extract_regions(
     k = max(3, int(round(min(h, w) / 200)) | 1)
     regions: list[RegionCandidate] = []
     for idx, label in enumerate(LABELS):
-        if label == "balcony":
-            continue  # user-assigned only; the model predicts railings
         mask = (label_map == idx).astype(np.uint8)
         if not mask.any():
             continue

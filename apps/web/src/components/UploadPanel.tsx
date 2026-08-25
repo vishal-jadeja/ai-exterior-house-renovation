@@ -1,26 +1,38 @@
 "use client";
 import { useCallback, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { ImageRec, Quality } from "@/lib/types";
+import type { ImageRec, Quality, UploadOut } from "@/lib/types";
 
-type Props = { projectId: string; onUploaded: (img: ImageRec, q: Quality) => void };
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
-export function UploadPanel({ projectId, onUploaded }: Props) {
+type Props = { projectId: string; hasRegions: boolean; onUploaded: (img: ImageRec, q: Quality) => void };
+
+export function UploadPanel({ projectId, hasRegions, onUploaded }: Props) {
   const [busy, setBusy] = useState(false);
   const [quality, setQuality] = useState<Quality | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [drag, setDrag] = useState(false);
 
   const upload = useCallback(
     async (file: File) => {
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setError("Image exceeds 10 MB — choose a smaller file.");
+        return;
+      }
+      if (hasRegions && !window.confirm("Replacing the photo resets detected regions and any material assignments tied to them. Continue?")) {
+        return;
+      }
       setBusy(true);
       setError(null);
+      setSuccess(null);
       setQuality(null);
       const fd = new FormData();
       fd.append("file", file);
       try {
-        const res = await api<{ image: ImageRec; quality: Quality }>(`/projects/${projectId}/images`, { method: "POST", body: fd });
+        const res = await api<UploadOut>(`/projects/${projectId}/images`, { method: "POST", body: fd });
         setQuality(res.quality);
+        setSuccess(res.replaced_regions > 0 ? `Photo replaced — ${res.replaced_regions} old region(s) were deactivated. Re-detect structure to continue.` : null);
         onUploaded(res.image, res.quality);
       } catch (err) {
         if (err instanceof ApiError && err.status === 422 && err.detail && typeof err.detail === "object") {
@@ -32,7 +44,7 @@ export function UploadPanel({ projectId, onUploaded }: Props) {
         setBusy(false);
       }
     },
-    [projectId, onUploaded],
+    [projectId, hasRegions, onUploaded],
   );
 
   return (
@@ -49,6 +61,7 @@ export function UploadPanel({ projectId, onUploaded }: Props) {
         <span className="mt-1 text-xs text-zinc-500">JPEG/PNG/WebP · up to 10 MB · shoot the full front elevation in daylight</span>
       </label>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+      {success && <p className="mt-2 text-sm text-teal-700">{success}</p>}
       {quality && (
         <div className={`mt-3 rounded-md border p-3 text-sm ${quality.usable ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
           <div className="mb-1 font-medium">

@@ -6,6 +6,7 @@ export type Project = {
 };
 export type Quality = { usable: boolean; score: number; blur_score: number; brightness: number; contrast: number; guidance: string[] };
 export type ImageRec = { id: string; kind: string; width: number | null; height: number | null; quality_score: number | null; meta: Record<string, unknown>; url: string | null; created_at: string };
+export type UploadOut = { image: ImageRec; quality: Quality; replaced_regions: number };
 export type RegionLabel = "wall" | "window" | "door" | "balcony" | "railing" | "pillar" | "parapet" | "gate" | "roof_edge";
 export type Region = { id: string; image_id: string; label: RegionLabel; name: string; polygon: number[][]; pixel_area: number; bbox: number[]; confidence: number; source: string; version: number; is_active: boolean };
 export type Material = { id: string; category: string; name: string; description: string; unit: string; quantity_unit: string; coverage: number | null; coats: number; piece_area_sqft: number | null; pieces_per_box: number | null; wastage_pct: number; default_material_rate: number; default_labor_rate: number; currency: string; texture_key: string | null; texture_url?: string | null; color_hex: string | null; prompt_hint: string; applicable_labels: RegionLabel[]; durability_years: number | null; maintenance: string };
@@ -16,6 +17,6 @@ export type RenderRec = { id: string; design_id: string; status: "queued" | "run
 export type EstimateLine = { region_id: string; region_name: string; label: RegionLabel; material_id: string; material_name: string; category: string; surface: number; surface_unit: string; quantity: number; quantity_unit: string; packs: number | null; pack_label: string | null; material_rate: number; labor_rate: number; material_cost: number; labor_cost: number; total: number; notes: string[] };
 export type Surface = { region_id: string; label: RegionLabel; name: string; area_sqft: number; length_ft: number | null; foreshortening: number; method: string; confidence: number; notes: string[] };
 export type EstimatePayload = { currency: string; lines: EstimateLine[]; categories: { category: string; material_cost: number; labor_cost: number; total: number }[]; material_total: number; labor_total: number; grand_total: number; scale: { ft_per_px: number; method: string; confidence: string; assumptions: string[] }; surfaces: Surface[]; assumptions: string[] };
-export type Estimate = { id: string; design_id: string; version: number; currency: string; grand_total: number; payload: EstimatePayload; created_at: string };
+export type Estimate = { id: string; design_id: string; version: number; currency: string; grand_total: number; payload: EstimatePayload; created_at: string; stale: boolean };
 export type Rate = { material_id: string; material_name: string; category: string; unit: string; quantity_unit: string; material_rate: number; labor_rate: number; default_material_rate: number; default_labor_rate: number; overridden: boolean };
 export type ReportRec = { id: string; design_id: string; status: "queued" | "running" | "done" | "failed"; error: string | null; url: string | null; job_id: string | null; created_at: string };

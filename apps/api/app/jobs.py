@@ -9,6 +9,7 @@ import numpy as np
 from PIL import Image as PILImage
 from sqlalchemy import select
 
+from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.models import Design, Estimate, Image, Material, Project, Region, Render, Report, User
 from app.providers.render.base import RenderRegion, RenderRequest
@@ -29,8 +30,6 @@ async def noop(db, job):
 
 @register("segment")
 async def segment_job(db, job):
-    from app.services.segmentation import segment
-
     project = await db.get(Project, job.payload["project_id"])
     image = await db.get(Image, job.payload["image_id"])
     if project is None or image is None:
@@ -39,9 +38,19 @@ async def segment_job(db, job):
     rgb = np.asarray(PILImage.open(io.BytesIO(jpeg)).convert("RGB"))
     h, w = rgb.shape[:2]
 
-    label_map, conf = await asyncio.to_thread(segment, rgb)
-    candidates = extract_regions(label_map, conf)
-    log.info("segmented", project_id=project.id, regions=len(candidates))
+    if not get_settings().segmentation_enabled:
+        # Deployments without the ML extra (or that just want to disable the model) skip
+        # straight to an empty, user-drawn-only region set rather than failing on import.
+        log.info("segmentation_disabled", project_id=project.id)
+        candidates: list[RegionCandidate] = []
+        guidance = "Automatic detection is disabled — use “Draw box” to add regions by hand."
+    else:
+        from app.services.segmentation import segment
+
+        label_map, conf = await asyncio.to_thread(segment, rgb)
+        candidates = extract_regions(label_map, conf)
+        guidance = None
+        log.info("segmented", project_id=project.id, regions=len(candidates))
 
     # Optional second opinion (Gemini). Never blocks.
     refiner = get_refiner()
@@ -135,6 +144,7 @@ async def segment_job(db, job):
         "refined": bool(refinement),
         "floors": project.floors,
         "labels": sorted({c.label for c in candidates}),
+        "guidance": guidance,
     }
 
 
@@ -231,6 +241,7 @@ async def render_job(db, job):
             project_id=project.id,
             kind="render",
             storage_key=key,
+            content_type="image/jpeg",
             width=out.shape[1],
             height=out.shape[0],
             meta={"design_id": design.id, "provider": provider},

@@ -8,6 +8,7 @@ import type { Design, Estimate, Project, Rate } from "@/lib/types";
 type Props = { project: Project; design: Design | null; onProjectChanged: (p: Project) => void };
 
 const CONF: Record<string, string> = { high: "bg-emerald-100 text-emerald-800", medium: "bg-amber-100 text-amber-800", low: "bg-red-100 text-red-800" };
+const CONF_FALLBACK = "bg-zinc-100 text-zinc-700";
 const METHOD: Record<string, string> = {
   user_measurement: "your measurements", door_reference: "door height reference (7 ft)",
   window_reference: "window height reference (4 ft)", floor_count: "floor count × 10 ft", default_assumption: "default 30 ft facade assumption",
@@ -22,7 +23,7 @@ export function EstimateStep({ project, design, onProjectChanged }: Props) {
   const [width, setWidth] = useState(project.facade_width_ft?.toString() ?? "");
   const [height, setHeight] = useState(project.facade_height_ft?.toString() ?? "");
   const [floors, setFloors] = useState(project.floors?.toString() ?? "");
-  const [edits, setEdits] = useState<Record<string, { material_rate: number; labor_rate: number }>>({});
+  const [edits, setEdits] = useState<Record<string, { material_rate: string; labor_rate: string }>>({});
 
   const load = useCallback(async () => {
     const rc = await api<{ rates: Rate[] }>(`/projects/${project.id}/rate-card`);
@@ -49,16 +50,28 @@ export function EstimateStep({ project, design, onProjectChanged }: Props) {
     }
   }
 
-  const saveMeasurements = () => run(async () => {
-    const p = await api<Project>(`/projects/${project.id}/measurements`, {
-      method: "PATCH",
-      body: { facade_width_ft: width ? Number(width) : null, facade_height_ft: height ? Number(height) : null, floors: floors ? Number(floors) : null },
+  const saveMeasurements = () => {
+    const w = width ? Number(width) : null;
+    const h = height ? Number(height) : null;
+    if ((w !== null && w < 6) || (h !== null && h < 6)) {
+      setMsg("Facade width/height must be at least 6 ft — leave a field blank to let the system infer it instead.");
+      return;
+    }
+    return run(async () => {
+      const p = await api<Project>(`/projects/${project.id}/measurements`, {
+        method: "PATCH",
+        body: { facade_width_ft: w, facade_height_ft: h, floors: floors ? Number(floors) : null },
+      });
+      onProjectChanged(p);
     });
-    onProjectChanged(p);
-  });
+  };
 
   const applyRates = () => run(async () => {
-    const items = Object.entries(edits).map(([material_id, v]) => ({ material_id, ...v }));
+    const items = Object.entries(edits).map(([material_id, v]) => ({
+      material_id,
+      material_rate: Number(v.material_rate),
+      labor_rate: Number(v.labor_rate),
+    }));
     if (items.length) await api(`/projects/${project.id}/rate-card`, { method: "PUT", body: { rates: items } });
     setEdits({});
   });
@@ -79,6 +92,11 @@ export function EstimateStep({ project, design, onProjectChanged }: Props) {
         </button>
       </div>
       {msg && <p className="mb-2 text-sm text-red-600">{msg}</p>}
+      {est?.stale && (
+        <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-800">
+          Rates/regions changed — recalculate to see updated numbers.
+        </p>
+      )}
 
       <details className="mb-3 rounded-md border bg-zinc-50 p-3 text-sm" open={!project.facade_width_ft}>
         <summary className="cursor-pointer font-medium">Optional measurements (improves accuracy)</summary>
@@ -94,7 +112,7 @@ export function EstimateStep({ project, design, onProjectChanged }: Props) {
       {p && (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className={`rounded-full px-2 py-0.5 ${CONF[p.scale.confidence]}`}>scale confidence: {p.scale.confidence}</span>
+            <span className={`rounded-full px-2 py-0.5 ${CONF[p.scale.confidence] ?? CONF_FALLBACK}`}>scale confidence: {p.scale.confidence}</span>
             <span className="text-zinc-600">Scale from {METHOD[p.scale.method] ?? p.scale.method} · 1 px ≈ {num(p.scale.ft_per_px * 12, 2)} in</span>
           </div>
 
@@ -112,16 +130,16 @@ export function EstimateStep({ project, design, onProjectChanged }: Props) {
               </tr></thead>
               <tbody>
                 {p.lines.map((l) => {
-                  const e = edits[l.material_id] ?? { material_rate: l.material_rate, labor_rate: l.labor_rate };
-                  const set = (k: "material_rate" | "labor_rate", v: number) => setEdits((x) => ({ ...x, [l.material_id]: { ...e, [k]: v } }));
+                  const e = edits[l.material_id] ?? { material_rate: String(l.material_rate), labor_rate: String(l.labor_rate) };
+                  const set = (k: "material_rate" | "labor_rate", v: string) => setEdits((x) => ({ ...x, [l.material_id]: { ...e, [k]: v } }));
                   return (
                     <tr key={l.region_id} className="border-t align-top">
                       <td className="py-1.5">{l.region_name}<div className="text-[11px] text-zinc-500">{LABEL_NAMES[l.label]}</div></td>
                       <td>{l.material_name}<div className="text-[11px] text-zinc-500">{l.notes.join(" · ")}</div></td>
                       <td className="text-right">{num(l.surface)} {l.surface_unit}</td>
                       <td className="text-right">{num(l.quantity, 2)} {l.quantity_unit}{l.packs != null && <div className="text-[11px] text-zinc-500">{l.packs} {l.pack_label}</div>}</td>
-                      <td className="text-right"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={e.material_rate} onChange={(ev) => set("material_rate", Number(ev.target.value))} /><div className="text-[11px] text-zinc-500">per {l.quantity_unit}</div></td>
-                      <td className="text-right"><input type="number" className="w-20 rounded border px-1 py-0.5 text-right" value={e.labor_rate} onChange={(ev) => set("labor_rate", Number(ev.target.value))} /><div className="text-[11px] text-zinc-500">per {l.surface_unit}</div></td>
+                      <td className="text-right"><input type="number" className="w-24 rounded border px-1 py-0.5 text-right" value={e.material_rate} onChange={(ev) => set("material_rate", ev.target.value)} /><div className="text-[11px] text-zinc-500">per {l.quantity_unit}</div></td>
+                      <td className="text-right"><input type="number" className="w-20 rounded border px-1 py-0.5 text-right" value={e.labor_rate} onChange={(ev) => set("labor_rate", ev.target.value)} /><div className="text-[11px] text-zinc-500">per {l.surface_unit}</div></td>
                       <td className="text-right">{money(l.material_cost, cur)}</td>
                       <td className="text-right">{money(l.labor_cost, cur)}</td>
                       <td className="text-right font-medium">{money(l.total, cur)}</td>

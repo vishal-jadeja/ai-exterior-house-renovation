@@ -77,6 +77,68 @@ async def test_upload_rejects_non_image(client, storage):
     assert r.status_code == 415
 
 
+async def test_upload_oversize_rejected(client, storage):
+    t = await register(client)
+    pid = await _project(client, t)
+    r = await client.post(
+        f"/projects/{pid}/images",
+        files={"file": ("huge.jpg", b"\xff" * (11 * 1024 * 1024), "image/jpeg")},
+        headers=auth(t),
+    )
+    assert r.status_code == 413
+
+
+async def test_reupload_deactivates_regions_and_keeps_assignments(client, storage):
+    from tests.test_designs import _seed
+
+    t = await register(client)
+    await _seed(client)
+    pid = await _project(client, t)
+    await client.post(
+        f"/projects/{pid}/images",
+        files={"file": ("house.jpg", synthetic_house(), "image/jpeg")},
+        headers=auth(t),
+    )
+    regs = (
+        await client.put(
+            f"/projects/{pid}/regions",
+            json={
+                "regions": [
+                    {"label": "wall", "polygon": [[0, 0], [500, 0], [500, 400], [0, 400]]},
+                    {"label": "railing", "polygon": [[50, 50], [250, 50], [250, 80], [50, 80]]},
+                ]
+            },
+            headers=auth(t),
+        )
+    ).json()
+    d = (await client.post(f"/projects/{pid}/designs", json={"name": "d"}, headers=auth(t))).json()
+    d = (
+        await client.put(
+            f"/designs/{d['id']}/assignments",
+            json={
+                "assignments": [
+                    {"region_id": regs[0]["id"], "material_id": "paint-exterior-emulsion"}
+                ]
+            },
+            headers=auth(t),
+        )
+    ).json()
+    assert len(d["assignments"]) == 1
+
+    r = await client.post(
+        f"/projects/{pid}/images",
+        files={"file": ("house2.jpg", synthetic_house(), "image/jpeg")},
+        headers=auth(t),
+    )
+    assert r.status_code == 201
+    assert r.json()["replaced_regions"] == len(regs)
+
+    # the old regions are deactivated, not deleted or cascade-removed
+    assert (await client.get(f"/projects/{pid}/regions", headers=auth(t))).json() == []
+    d2 = (await client.get(f"/projects/{pid}/designs", headers=auth(t))).json()[0]
+    assert len(d2["assignments"]) == 1
+
+
 async def test_upload_foreign_project_404(client, storage):
     a = await register(client, "a@example.com")
     b = await register(client, "b@example.com")

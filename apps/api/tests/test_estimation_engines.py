@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from app.services import area_estimator, cost_engine, quantity_engine, scale_estimator
@@ -122,3 +123,57 @@ def test_cost_totals_and_categories():
     # editing a rate changes the total deterministically
     est2 = cost_engine.price([(WALL, qp, {"material_rate": 500, "labor_rate": 15})], "INR")
     assert est2["grand_total"] == 21 * 500 + 15000
+    # category totals must sum back to the grand total
+    assert sum(c["total"] for c in est["categories"]) == est["grand_total"]
+
+
+def test_foreshortening_axis_aligned_is_one_trapezoid_is_more():
+    rect = np.array(WALL["polygon"], np.float32)
+    assert area_estimator._foreshortening(rect) == 1.0
+    trapezoid = np.array([[0, 0], [1000, 100], [1000, 400], [0, 500]], np.float32)
+    assert area_estimator._foreshortening(trapezoid) > 1.0
+
+
+def test_balcony_gets_a_length_and_nonzero_railing_cost():
+    balcony = dict(RAIL, id="b", label="balcony", name="Balcony 1")
+    ft = 7 / 200
+    m = {x.region_id: x for x in area_estimator.measure([WALL, DOOR, balcony], ft, 1000, 500)}
+    assert m["b"].length_ft is not None and m["b"].length_ft > 0
+    q = quantity_engine.compute(RAILING, 0, m["b"].length_ft)
+    est = cost_engine.price([(balcony, q, {"material_rate": 1450, "labor_rate": 260})], "INR")
+    assert est["grand_total"] > 0
+
+
+def test_pillar_area_is_height_times_width_plus_two_depths():
+    ft = 1.0
+    pillar = {
+        "id": "pi",
+        "label": "pillar",
+        "name": "Pillar 1",
+        "polygon": [[0, 0], [50, 0], [50, 300], [0, 300]],
+        "bbox": [0, 0, 50, 300],
+        "confidence": 0.8,
+    }
+    m = {x.region_id: x for x in area_estimator.measure([pillar], ft, 1000, 500)}
+    assert m["pi"].area_sqft == pytest.approx(300 * (50 + 2), rel=0.001)
+
+
+def test_sloped_railing_polyline_length_exceeds_bbox_width():
+    ft = 1.0
+    sloped = {
+        "id": "sr",
+        "label": "railing",
+        "name": "Sloped railing",
+        "polygon": [[0, 80], [280, 0], [300, 20], [20, 100]],
+        "bbox": [0, 0, 300, 100],
+        "confidence": 0.8,
+    }
+    m = {x.region_id: x for x in area_estimator.measure([sloped], ft, 1000, 500)}
+    assert m["sr"].length_ft > sloped["bbox"][2] * ft
+
+
+def test_user_width_and_height_scale_uses_geometric_mean():
+    s = scale_estimator.estimate([WALL], 1000, facade_width_ft=40, facade_height_ft=20)
+    sil_w, sil_h = 1000.0, 500.0
+    expected = ((40 / sil_w) * (20 / sil_h)) ** 0.5
+    assert s.method == "user_measurement" and s.ft_per_px == pytest.approx(expected)

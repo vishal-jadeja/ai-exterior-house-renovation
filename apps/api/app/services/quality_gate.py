@@ -31,7 +31,7 @@ class QualityResult:
         return self.__dict__.copy()
 
 
-def assess(image_bgr: np.ndarray) -> QualityResult:
+def assess(image_bgr: np.ndarray, min_side: int = MIN_SIDE) -> QualityResult:
     h, w = image_bgr.shape[:2]
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
     # Evaluate blur at a normalised size so the threshold is resolution-independent.
@@ -47,10 +47,10 @@ def assess(image_bgr: np.ndarray) -> QualityResult:
 
     guidance: list[str] = []
     usable = True
-    if min(h, w) < MIN_SIDE:
+    if min(h, w) < min_side:
         usable = False
         guidance.append(
-            f"Image is too small ({w}×{h}). Use at least {MIN_SIDE}px on the short side."
+            f"Image is too small ({w}×{h}). Use at least {min_side}px on the short side."
         )
     if blur < BLUR_HARD_MIN:
         usable = False
