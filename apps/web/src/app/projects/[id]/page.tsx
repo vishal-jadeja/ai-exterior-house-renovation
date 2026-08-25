@@ -6,14 +6,16 @@ import { Shell } from "@/components/Shell";
 import { UploadPanel } from "@/components/UploadPanel";
 import { StructureStep } from "@/components/StructureStep";
 import { DesignStep } from "@/components/DesignStep";
+import { RenderStep } from "@/components/RenderStep";
 import { api } from "@/lib/api";
-import type { ImageRec, Project, Region } from "@/lib/types";
+import type { Design, ImageRec, Project, Region } from "@/lib/types";
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [image, setImage] = useState<ImageRec | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
+  const [design, setDesign] = useState<Design | null>(null);
 
   const load = useCallback(async () => {
     const [p, imgs] = await Promise.all([
@@ -61,7 +63,13 @@ export default function ProjectPage() {
 
       {regions.length > 0 && (
         <section className="mt-6">
-          <DesignStep projectId={project.id} regions={regions} />
+          <DesignStep projectId={project.id} regions={regions} onActiveDesign={setDesign} />
+        </section>
+      )}
+
+      {design && image && (
+        <section className="mt-6">
+          <RenderStep design={design} image={image} />
         </section>
       )}
     </Shell>

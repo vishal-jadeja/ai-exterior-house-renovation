@@ -12,3 +12,4 @@ export type Material = { id: string; category: string; name: string; description
 export type Job = { id: string; type: string; status: "queued" | "running" | "done" | "failed"; error: string | null; result: Record<string, unknown> | null };
 export type Assignment = { id?: string; region_id: string; material_id: string; color_hex: string | null };
 export type Design = { id: string; project_id: string; name: string; is_active: boolean; assignments: Assignment[]; created_at: string; updated_at: string };
+export type RenderRec = { id: string; design_id: string; status: "queued" | "running" | "done" | "failed"; provider_used: string | null; provider_log: { provider: string; status: string; reason?: string }[]; error: string | null; url: string | null; job_id: string | null; created_at: string };

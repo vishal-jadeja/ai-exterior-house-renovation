@@ -15,10 +15,14 @@ before/after comparison. Must work with zero API keys.
 - Render job; renders stored as images; web before/after slider + side-by-side + provider badge.
 
 ## Checklist
-- [ ] Providers + chain + unit test for local renderer on synthetic image
-- [ ] `POST /designs/{id}/render`, `GET /designs/{id}/renders`
-- [ ] Web compare view
+- [x] Providers + chain + unit test for local renderer on synthetic image
+- [x] `POST /designs/{id}/render`, `GET /designs/{id}/renders`
+- [x] Web compare view
 
 ## Acceptance criteria
 - Redesigned image keeps windows/doors/structure; cladding/paint visibly applied.
 - Removing all keys → still renders via local provider; quota error → falls through to next tier.
+
+## Outcome notes
+- Hosted providers (Cloudflare Workers AI, fal.ai) are implemented against their documented HTTP APIs and take the local composite as the init image; they could not be exercised end-to-end without API keys. The chain reports them as `skipped` and the local compositor always produces the result.
+- Regions are grouped by material before calling hosted inpainting so a render costs ~2-4 calls instead of one per region (free-tier friendly).

@@ -13,7 +13,17 @@ from slowapi.middleware import SlowAPIMiddleware
 from app.core.config import get_settings
 from app.core.logging import configure_logging, get_logger
 from app.core.ratelimit import limiter
-from app.routers import auth, designs, health, images, jobs, materials, projects, regions
+from app.routers import (
+    auth,
+    designs,
+    health,
+    images,
+    jobs,
+    materials,
+    projects,
+    regions,
+    renders,
+)
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -73,3 +83,4 @@ app.include_router(regions.router)
 app.include_router(jobs.router)
 app.include_router(materials.router)
 app.include_router(designs.router)
+app.include_router(renders.router)

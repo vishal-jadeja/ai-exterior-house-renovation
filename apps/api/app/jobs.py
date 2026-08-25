@@ -10,12 +10,14 @@ from PIL import Image as PILImage
 from sqlalchemy import select
 
 from app.core.logging import get_logger
-from app.models import Image, Project, Region
-from app.providers.storage.s3 import get_storage
+from app.models import Design, Image, Material, Project, Region, Render
+from app.providers.render.base import RenderRegion, RenderRequest
+from app.providers.render.chain import FallbackChainRenderer
+from app.providers.storage import s3
 from app.providers.vision.gemini import get_refiner
 from app.services.jobs import register
 from app.services.region_mapper import RegionCandidate, extract_regions, polygon_area
-from app.services.taxonomy import HUMAN
+from app.services.taxonomy import HUMAN, OPENING_LABELS
 
 log = get_logger("jobs")
 
@@ -33,7 +35,7 @@ async def segment_job(db, job):
     image = await db.get(Image, job.payload["image_id"])
     if project is None or image is None:
         raise RuntimeError("project or image vanished")
-    jpeg = await get_storage().get(image.storage_key)
+    jpeg = await s3.get_storage().get(image.storage_key)
     rgb = np.asarray(PILImage.open(io.BytesIO(jpeg)).convert("RGB"))
     h, w = rgb.shape[:2]
 
@@ -127,3 +129,116 @@ async def segment_job(db, job):
         "floors": project.floors,
         "labels": sorted({c.label for c in candidates}),
     }
+
+
+def default_px_per_ft(project: Project, width: int) -> float:
+    """Texture scale: use the project's estimated scale when known, else assume a ~35 ft facade."""
+    if project.scale_ft_per_px:
+        return 1.0 / project.scale_ft_per_px
+    return width / 35.0
+
+
+@register("render")
+async def render_job(db, job):
+    from sqlalchemy.orm import selectinload
+
+    render = await db.get(Render, job.payload["render_id"])
+    design = (
+        await db.execute(
+            select(Design)
+            .options(selectinload(Design.assignments))
+            .where(Design.id == job.payload["design_id"])
+        )
+    ).scalar_one_or_none()
+    if render is None or design is None:
+        raise RuntimeError("render or design vanished")
+    render.status = "running"
+    await db.commit()
+    try:
+        project = await db.get(Project, design.project_id)
+        image = (
+            (
+                await db.execute(
+                    select(Image)
+                    .where(Image.project_id == project.id, Image.kind == "sanitized")
+                    .order_by(Image.created_at.desc())
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if image is None:
+            raise RuntimeError("no source image")
+        storage = s3.get_storage()
+        rgb = np.asarray(
+            PILImage.open(io.BytesIO(await storage.get(image.storage_key))).convert("RGB")
+        )
+        regions = {
+            r.id: r
+            for r in (
+                await db.execute(
+                    select(Region).where(
+                        Region.project_id == project.id, Region.is_active.is_(True)
+                    )
+                )
+            ).scalars()
+        }
+        materials = {m.id: m for m in (await db.execute(select(Material))).scalars()}
+        textures: dict[str, np.ndarray] = {}
+        rr: list[RenderRegion] = []
+        for a in design.assignments:
+            r, m = regions.get(a.region_id), materials.get(a.material_id)
+            if r is None or m is None:
+                continue
+            tex = None
+            if m.texture_key:
+                if m.texture_key not in textures:
+                    textures[m.texture_key] = np.asarray(
+                        PILImage.open(io.BytesIO(await storage.get(m.texture_key))).convert("RGB")
+                    )
+                tex = textures[m.texture_key]
+            rr.append(
+                RenderRegion(
+                    region_id=r.id,
+                    label=r.label,
+                    name=r.name,
+                    polygon=r.polygon,
+                    material_id=m.id,
+                    category=m.category,
+                    material_name=m.name,
+                    prompt_hint=m.prompt_hint,
+                    texture=tex,
+                    color_hex=a.color_hex or m.color_hex,
+                )
+            )
+        holes = [r.polygon for r in regions.values() if r.label in OPENING_LABELS]
+        req = RenderRequest(
+            rgb=rgb, regions=rr, px_per_ft=default_px_per_ft(project, rgb.shape[1]), holes=holes
+        )
+        out, provider = await FallbackChainRenderer().render(req)
+        buf = io.BytesIO()
+        PILImage.fromarray(out).save(buf, format="JPEG", quality=90)
+        key = f"projects/{project.id}/renders/{render.id}.jpg"
+        await storage.put(key, buf.getvalue(), "image/jpeg")
+        img = Image(
+            project_id=project.id,
+            kind="render",
+            storage_key=key,
+            width=out.shape[1],
+            height=out.shape[0],
+            meta={"design_id": design.id, "provider": provider},
+        )
+        db.add(img)
+        await db.flush()
+        render.image_id = img.id
+        render.provider_used = provider
+        render.provider_log = req.log
+        render.status = "done"
+        project.status = "rendered"
+        await db.commit()
+        return {"render_id": render.id, "provider": provider, "regions": len(rr)}
+    except Exception as exc:
+        render.status = "failed"
+        render.error = str(exc)[:1000]
+        await db.commit()
+        raise

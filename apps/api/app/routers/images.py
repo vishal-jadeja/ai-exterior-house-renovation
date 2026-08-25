@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.core.deps import DB, OwnedProject
 from app.core.ratelimit import limiter
 from app.models import Image
-from app.providers.storage.s3 import get_storage
+from app.providers.storage import s3
 from app.schemas.project import ImageOut, QualityOut, UploadOut
 from app.services import images as imgsvc
 from app.services.quality_gate import assess
@@ -18,7 +18,7 @@ router = APIRouter(prefix="/projects/{project_id}/images", tags=["images"])
 
 def _with_url(img: Image) -> ImageOut:
     out = ImageOut.model_validate(img)
-    out.url = get_storage().presign(img.storage_key)
+    out.url = s3.get_storage().presign(img.storage_key)
     return out
 
 
@@ -43,7 +43,7 @@ async def upload_image(
             status.HTTP_422_UNPROCESSABLE_ENTITY,
             {"message": "Image not usable", "quality": quality.as_dict()},
         )
-    storage = get_storage()
+    storage = s3.get_storage()
     # Replace any previous facade photo: one active source image per project (prototype scope).
     old = (
         (

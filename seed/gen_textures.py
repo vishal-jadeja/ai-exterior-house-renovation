@@ -53,7 +53,7 @@ def bricks(brick=(178, 84, 62), mortar=(205, 198, 185), bw=64, bh=28, gap=4):
     return a * (0.9 + 0.2 * noise(1.5)[..., None])
 
 
-def stone(cols=((120, 112, 100), (150, 140, 125), (95, 90, 85), (170, 160, 145)), n=90):
+def stone(cols=((168, 158, 142), (192, 182, 165), (140, 132, 122), (205, 196, 180)), n=70):
     pts = rng.random((n, 2)) * S
     yy, xx = np.mgrid[0:S, 0:S]
     # toroidal Voronoi for tileability

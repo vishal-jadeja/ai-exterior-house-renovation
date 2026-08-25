@@ -22,12 +22,12 @@ export function DesignStep({ projectId, regions, onActiveDesign }: Props) {
     setDesigns(ds);
     const active = ds.find((d) => d.is_active) ?? ds[0] ?? null;
     setCurrent((c) => c && ds.some((d) => d.id === c) ? c : active?.id ?? null);
-    onActiveDesign?.(active);
-  }, [projectId, onActiveDesign]);
+  }, [projectId]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch-then-set
   useEffect(() => { load().catch(() => {}); }, [load]);
 
   const design = useMemo(() => designs.find((d) => d.id === current) ?? null, [designs, current]);
+  useEffect(() => { onActiveDesign?.(design); }, [design, onActiveDesign]);
   useEffect(() => {
     const map: Record<string, Assignment> = {};
     design?.assignments.forEach((a) => { map[a.region_id] = a; });

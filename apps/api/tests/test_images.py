@@ -3,8 +3,6 @@ from __future__ import annotations
 import pytest
 
 from app.providers.storage import s3
-from app.routers import images as images_router
-from app.routers import materials as materials_router
 from tests.helpers import auth, register, synthetic_house
 
 
@@ -28,9 +26,9 @@ class FakeStorage:
 @pytest.fixture
 def storage(monkeypatch):
     fake = FakeStorage()
-    monkeypatch.setattr(s3, "get_storage", lambda: fake)
-    monkeypatch.setattr(images_router, "get_storage", lambda: fake)
-    monkeypatch.setattr(materials_router, "get_storage", lambda: fake)
+    monkeypatch.setattr(
+        s3, "get_storage", lambda: fake
+    )  # every caller goes through s3.get_storage()
     return fake
 
 
