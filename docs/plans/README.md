@@ -10,6 +10,6 @@ Status is tracked by ticking the checklists; one commit per phase.
 | 2 | Structure identification & review editor | 3.5h | done |
 | 3 | Material catalog & designs | 2h | done |
 | 4 | Renovation visualization (render providers) | 4h | done |
-| 5 | Area, quantity & cost estimation | 3h | in progress |
-| 6 | Report generation | 1.5h | pending |
+| 5 | Area, quantity & cost estimation | 3h | done |
+| 6 | Report generation | 1.5h | in progress |
 | 7 | Docs, deployment, polish | 2.5h | pending |

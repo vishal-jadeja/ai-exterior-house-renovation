@@ -7,6 +7,7 @@ import { UploadPanel } from "@/components/UploadPanel";
 import { StructureStep } from "@/components/StructureStep";
 import { DesignStep } from "@/components/DesignStep";
 import { RenderStep } from "@/components/RenderStep";
+import { EstimateStep } from "@/components/EstimateStep";
 import { api } from "@/lib/api";
 import type { Design, ImageRec, Project, Region } from "@/lib/types";
 
@@ -70,6 +71,12 @@ export default function ProjectPage() {
       {design && image && (
         <section className="mt-6">
           <RenderStep design={design} image={image} />
+        </section>
+      )}
+
+      {design && (
+        <section className="mt-6">
+          <EstimateStep project={project} design={design} onProjectChanged={setProject} />
         </section>
       )}
     </Shell>

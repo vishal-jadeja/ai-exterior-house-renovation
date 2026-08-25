@@ -16,6 +16,7 @@ from app.core.ratelimit import limiter
 from app.routers import (
     auth,
     designs,
+    estimates,
     health,
     images,
     jobs,
@@ -84,3 +85,4 @@ app.include_router(jobs.router)
 app.include_router(materials.router)
 app.include_router(designs.router)
 app.include_router(renders.router)
+app.include_router(estimates.router)

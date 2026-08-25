@@ -17,11 +17,11 @@ editable rates and instant recalculation.
   rate editing.
 
 ## Checklist
-- [ ] `services/scale_estimator.py`, `area_estimator.py`, `quantity_engine.py`, `cost_engine.py`
+- [x] `services/scale_estimator.py`, `area_estimator.py`, `quantity_engine.py`, `cost_engine.py`
       (pure; golden-case tests)
-- [ ] `PATCH /projects/{id}/measurements`, `GET|PUT /projects/{id}/rate-card`
-- [ ] `POST /designs/{id}/estimate`, `GET /designs/{id}/estimate`
-- [ ] Web estimate view
+- [x] `PATCH /projects/{id}/measurements`, `GET|PUT /projects/{id}/rate-card`
+- [x] `POST /designs/{id}/estimate`, `GET /designs/{id}/estimate`
+- [x] Web estimate view
 
 ## Acceptance criteria
 - Editing paint rate changes the total immediately; assumptions and confidence are visible.
