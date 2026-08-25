@@ -5,13 +5,15 @@ import Link from "next/link";
 import { Shell } from "@/components/Shell";
 import { UploadPanel } from "@/components/UploadPanel";
 import { StructureStep } from "@/components/StructureStep";
+import { DesignStep } from "@/components/DesignStep";
 import { api } from "@/lib/api";
-import type { ImageRec, Project } from "@/lib/types";
+import type { ImageRec, Project, Region } from "@/lib/types";
 
 export default function ProjectPage() {
   const { id } = useParams<{ id: string }>();
   const [project, setProject] = useState<Project | null>(null);
   const [image, setImage] = useState<ImageRec | null>(null);
+  const [regions, setRegions] = useState<Region[]>([]);
 
   const load = useCallback(async () => {
     const [p, imgs] = await Promise.all([
@@ -53,7 +55,13 @@ export default function ProjectPage() {
 
       {image && (
         <section className="mt-6">
-          <StructureStep projectId={project.id} image={image} />
+          <StructureStep projectId={project.id} image={image} onRegionsChanged={setRegions} />
+        </section>
+      )}
+
+      {regions.length > 0 && (
+        <section className="mt-6">
+          <DesignStep projectId={project.id} regions={regions} />
         </section>
       )}
     </Shell>

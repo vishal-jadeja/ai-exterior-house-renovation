@@ -12,7 +12,9 @@ from app.core.db import SessionLocal
 from app.core.logging import configure_logging, get_logger
 from app.models import Material
 
-SEED_FILE = Path(__file__).resolve().parents[3] / "seed" / "materials.json"
+SEED_DIR = Path(__file__).resolve().parents[3] / "seed"
+SEED_FILE = SEED_DIR / "materials.json"
+TEXTURE_DIR = SEED_DIR / "textures"
 log = get_logger("seed")
 
 
@@ -35,7 +37,31 @@ async def seed_materials() -> int:
     return n
 
 
+async def seed_textures() -> int:
+    """Upload procedural textures to object storage (idempotent overwrite)."""
+    from app.providers.storage.s3 import get_storage
+
+    if not TEXTURE_DIR.exists():
+        log.warning("texture_dir_missing", path=str(TEXTURE_DIR))
+        return 0
+    storage = get_storage()
+    storage.ensure_bucket()
+    n = 0
+    for f in sorted(TEXTURE_DIR.glob("*.jpg")):
+        await storage.put(f"textures/{f.name}", f.read_bytes(), "image/jpeg")
+        n += 1
+    return n
+
+
+async def main() -> None:
+    count = await seed_materials()
+    log.info("seeded_materials", count=count)
+    try:
+        log.info("seeded_textures", count=await seed_textures())
+    except Exception as exc:  # noqa: BLE001 - storage may be absent in some dev setups
+        log.warning("texture_seed_failed", error=str(exc))
+
+
 if __name__ == "__main__":
     configure_logging()
-    count = asyncio.run(seed_materials())
-    log.info("seeded_materials", count=count)
+    asyncio.run(main())

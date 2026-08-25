@@ -13,11 +13,11 @@ Let the user pick materials per region and keep several design variants side by 
 - Web: material picker filtered by region label, design tabs, "duplicate design".
 
 ## Checklist
-- [ ] `GET /materials`
-- [ ] `GET|POST /projects/{id}/designs`, `PATCH|DELETE /designs/{id}`, `POST /designs/{id}/clone`
-- [ ] `PUT /designs/{id}/assignments` (bulk)
-- [ ] Seed textures (CC0) in `seed/textures`, uploaded to storage on seed
-- [ ] Web design panel
+- [x] `GET /materials`
+- [x] `GET|POST /projects/{id}/designs`, `PATCH|DELETE /designs/{id}`, `POST /designs/{id}/clone`
+- [x] `PUT /designs/{id}/assignments` (bulk)
+- [x] Seed textures (CC0) in `seed/textures`, uploaded to storage on seed
+- [x] Web design panel
 
 ## Acceptance criteria
 - Two designs with different assignments saved; switching tabs swaps assignments instantly.
