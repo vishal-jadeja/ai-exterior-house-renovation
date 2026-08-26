@@ -15,6 +15,9 @@ RUN pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-u
 COPY apps/api/app ./app
 RUN pip install ".[ml,report]"
 COPY apps/api/ ./
+# Material catalog + textures live at the repo root; seed.py finds them via SEED_DIR.
+COPY seed /srv/seed
+ENV SEED_DIR=/srv/seed
 RUN mkdir -p /models && useradd -m -u 1000 app && chown -R app:app /srv /models
 USER app
 EXPOSE 8000

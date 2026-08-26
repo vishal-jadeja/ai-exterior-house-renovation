@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 from sqlalchemy import select
@@ -12,7 +13,24 @@ from app.core.db import SessionLocal
 from app.core.logging import configure_logging, get_logger
 from app.models import Material
 
-SEED_DIR = Path(__file__).resolve().parents[3] / "seed"
+
+def _find_seed_dir() -> Path:
+    """`SEED_DIR` env var wins; otherwise walk up from this file looking for `seed/materials.json`.
+
+    A fixed `parents[n]` breaks inside the Docker image, where `app/` sits at `/srv/app` and the
+    repo root does not exist.
+    """
+    if env := os.environ.get("SEED_DIR"):
+        return Path(env)
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        candidate = parent / "seed"
+        if (candidate / "materials.json").exists():
+            return candidate
+    return here.parents[min(3, len(here.parents) - 1)] / "seed"
+
+
+SEED_DIR = _find_seed_dir()
 SEED_FILE = SEED_DIR / "materials.json"
 TEXTURE_DIR = SEED_DIR / "textures"
 log = get_logger("seed")

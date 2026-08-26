@@ -36,3 +36,31 @@ jobs:
       - run: pnpm lint && pnpm exec tsc --noEmit
       - run: pnpm build
         env: { NEXT_PUBLIC_API_URL: http://localhost:8000 }
+  compose:
+    # The unit jobs never build images or start the stack; this is the only check that catches
+    # Dockerfile COPY paths, in-container path resolution and healthcheck wiring.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose -f infra/docker-compose.yml build
+      - run: docker compose -f infra/docker-compose.yml up -d postgres minio api
+      - name: Wait for api to become healthy, then check the catalog seeded
+        run: |
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' renovation-api-1 2>/dev/null || echo starting)
+            [ "$status" = healthy ] && break
+            sleep 5
+          done
+          docker compose -f infra/docker-compose.yml ps
+          docker compose -f infra/docker-compose.yml logs api | tail -50
+          [ "$status" = healthy ]
+          curl -sf http://localhost:8000/health
+          n=$(docker compose -f infra/docker-compose.yml exec -T api python -c \
+            "import asyncio; from sqlalchemy import select, func; from app.core.db import SessionLocal; from app.models import Material
+async def m():
+    async with SessionLocal() as db: print((await db.execute(select(func.count()).select_from(Material))).scalar())
+asyncio.run(m())")
+          echo "materials seeded: $n"; [ "$n" -gt 0 ]
+      - if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
