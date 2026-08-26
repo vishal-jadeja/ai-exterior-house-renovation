@@ -14,3 +14,4 @@ Status is tracked by ticking the checklists; one commit per phase.
 | 6 | Report generation | 1.5h | done |
 | 7 | Docs, deployment, polish | 2.5h | pending (awaiting go-ahead) |
 | R | Senior review fixes (CI/worker/data-loss bugs, estimation math, UX, hygiene) | — | done — see [review-fixes.md](review-fixes.md) |
+| R2 | Second review: compose stack startup, models shadowing, orphaned-assignment ₹0 estimates, fingerprint gaps | — | done (commits after `b53949d`) |

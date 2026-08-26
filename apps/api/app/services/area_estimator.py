@@ -102,9 +102,12 @@ def measure(
 ) -> list[SurfaceMeasure]:
     h, w = image_h, image_w
     openings = np.zeros((h, w), np.uint8)
+    railings = np.zeros((h, w), np.uint8)
     for r in regions:
         if r["label"] in OPENING_LABELS:
             openings |= rasterize(r["polygon"], h, w)
+        if r["label"] == "railing":
+            railings |= rasterize(r["polygon"], h, w)
 
     out: list[SurfaceMeasure] = []
     for r in regions:
@@ -134,9 +137,14 @@ def measure(
         elif label in ("railing", "roof_edge", "balcony"):
             # Running length along the strip (follows slope for stair/ramp railings) …
             net = gross
+            if label == "balcony":
+                # A railing drawn on top of the balcony is priced as its own region.
+                net = float((mask & ~railings).sum())
+                if gross and net < gross:
+                    notes.append(f"railing excluded: {100 * (1 - net / gross):.0f}% of gross")
             length = max(_polyline_length(poly), float(r["bbox"][2])) * ft_per_px
             # … and the visible front face, for materials priced per area.
-            area = gross * ft_per_px**2 * fs
+            area = net * ft_per_px**2 * fs
             method = "polyline length × scale (running length); face area = pixel area × scale²"
         elif label == "gate":
             net = gross
@@ -146,8 +154,11 @@ def measure(
         else:  # window, door — informational only
             net = gross
             area = gross * ft_per_px**2 * fs
-        if fs > 1.02:
+        fs_applied = label not in ("pillar", "gate")  # those use bbox-based formulas
+        if fs > 1.02 and fs_applied:
             notes.append(f"foreshortening ×{fs:.2f} applied (surface viewed at an angle)")
+        if not fs_applied:
+            fs = 1.0
         conf = float(r.get("confidence", 0.6))
         out.append(
             SurfaceMeasure(

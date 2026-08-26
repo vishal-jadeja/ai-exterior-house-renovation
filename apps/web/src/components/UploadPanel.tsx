@@ -30,7 +30,8 @@ export function UploadPanel({ projectId, hasRegions, onUploaded }: Props) {
       const fd = new FormData();
       fd.append("file", file);
       try {
-        const res = await api<UploadOut>(`/projects/${projectId}/images`, { method: "POST", body: fd });
+        // A 10 MB photo on a slow uplink plus server-side quality analysis needs far more than the default 30 s.
+        const res = await api<UploadOut>(`/projects/${projectId}/images`, { method: "POST", body: fd, timeoutMs: 180_000 });
         setQuality(res.quality);
         setSuccess(res.replaced_regions > 0 ? `Photo replaced — ${res.replaced_regions} old region(s) were deactivated. Re-detect structure to continue.` : null);
         onUploaded(res.image, res.quality);
@@ -55,7 +56,7 @@ export function UploadPanel({ projectId, hasRegions, onUploaded }: Props) {
         onDrop={(e) => { e.preventDefault(); setDrag(false); const f = e.dataTransfer.files[0]; if (f) upload(f); }}
         className={`flex cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-8 text-center text-sm ${drag ? "border-teal-600 bg-teal-50" : "border-zinc-300 bg-white"}`}
       >
-        <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={busy}
+        <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={busy} aria-label="Choose a photo of your house exterior"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); e.target.value = ""; }} />
         <span className="font-medium">{busy ? "Checking image quality…" : "Drop a photo of your house exterior, or click to choose"}</span>
         <span className="mt-1 text-xs text-zinc-500">JPEG/PNG/WebP · up to 10 MB · shoot the full front elevation in daylight</span>

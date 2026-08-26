@@ -94,8 +94,10 @@ class Settings(BaseSettings):
             problems.append("JWT_SECRET must be set to a random string of at least 32 characters")
         if not self.cookie_secure:
             problems.append("COOKIE_SECURE must be true (refresh cookie is sent over HTTPS only)")
-        if self.s3_secret_key == "minioadmin":
-            problems.append("S3_SECRET_KEY is the MinIO development default")
+        if self.s3_secret_key == "minioadmin" or self.s3_access_key == "minioadmin":
+            problems.append("S3_ACCESS_KEY / S3_SECRET_KEY are the MinIO development defaults")
+        if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origins):
+            problems.append("CORS_ORIGINS still allows a localhost origin (with credentials)")
         if problems:
             raise ValueError("Unsafe production configuration: " + "; ".join(problems))
         return self

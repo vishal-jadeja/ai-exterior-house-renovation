@@ -1,4 +1,5 @@
 "use client";
+import { msgClass } from "@/lib/format";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { EditableRegion } from "@/components/RegionEditor";
@@ -99,7 +100,7 @@ export function StructureStep({ projectId, image, onRegionsChanged }: Props) {
           </button>
         </div>
       </div>
-      {msg && <p className="mb-2 text-sm text-zinc-600">{msg}</p>}
+      {msg && <p className={`mb-2 text-sm ${msgClass(msg)}`}>{msg}</p>}
       {regions.length === 0 && !busy && (
         <p className="mb-3 text-sm text-zinc-500">
           Run detection to find walls, windows, doors, railings and pillars. You can then correct anything the model missed.

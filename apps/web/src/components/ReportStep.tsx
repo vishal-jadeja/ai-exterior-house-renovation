@@ -1,4 +1,5 @@
 "use client";
+import { msgClass } from "@/lib/format";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { waitForJob } from "@/lib/jobs";
@@ -39,7 +40,7 @@ export function ReportStep({ design }: { design: Design | null }) {
         if (!controller.signal.aborted) setBusy(false);
       }
     })();
-    return () => controller.abort();
+    return () => { controller.abort(); abortRef.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume-on-mount is keyed on design only
   }, [design?.id]);
 
@@ -79,7 +80,7 @@ export function ReportStep({ design }: { design: Design | null }) {
           </button>
         </div>
       </div>
-      {msg && <p className="text-sm text-zinc-600">{msg}</p>}
+      {msg && <p className={`text-sm ${msgClass(msg)}`}>{msg}</p>}
       {latest && <p className="text-xs text-zinc-500">Latest report generated {new Date(latest.created_at).toLocaleString()}. Links expire after 15 minutes; regenerate or reload to get a fresh one.</p>}
     </div>
   );

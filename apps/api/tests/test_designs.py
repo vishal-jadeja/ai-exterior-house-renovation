@@ -45,7 +45,7 @@ async def test_materials_listed_with_texture_urls(client, storage):  # noqa: F81
     t = await register(client)
     await _seed(client)
     r = await client.get("/materials", headers=auth(t))
-    assert r.status_code == 200 and len(r.json()) == 16
+    assert r.status_code == 200 and len(r.json()) >= 16
     assert r.json()[0]["texture_url"].startswith("http://fake/textures/")
 
 

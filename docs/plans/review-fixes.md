@@ -1,5 +1,12 @@
 # Review fixes — remaining work
 
+> **Status (2026-08-26): everything below is done** and committed in `d5ad9e7` + `b53949d`.
+> A second senior review the same day found further demo-blocking issues (compose stack could not
+> start, stale `app/models/` package shadowing `models.py`, orphaned design assignments producing
+> ₹0 estimates) — fixed in the commits that follow `b53949d`; see `git log` and
+> [phase-7.md](phase-7.md) for what remains (docs + deployment). The section headings below are
+> kept as the original checklist.
+
 Senior review of phases 0–6 (2026-08-25) found 3 demo-breaking bugs, several silent
 data-loss / wrong-money bugs and a set of UX/hygiene gaps. Full findings: the review plan in
 `~/.claude/plans/as-a-senior-engineer-parsed-bachman.md`. This file tracks what is **already

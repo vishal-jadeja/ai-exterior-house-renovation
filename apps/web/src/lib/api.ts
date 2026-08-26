@@ -13,7 +13,7 @@ export class ApiError extends Error {
   }
 }
 
-type Opts = Omit<RequestInit, "body"> & { body?: unknown; retry?: boolean };
+type Opts = Omit<RequestInit, "body"> & { body?: unknown; retry?: boolean; timeoutMs?: number };
 
 // Concurrent 401s share one refresh instead of each firing their own request against the
 // single-use refresh cookie (the second would just fail and log the user out).
@@ -43,19 +43,19 @@ function pydanticDetailMessage(detail: unknown): string | null {
   return items.map((d) => `${(d.loc as unknown[]).slice(1).join(".")}: ${d.msg}`).join("; ");
 }
 
-function timeoutSignal(caller?: AbortSignal | null): AbortSignal {
-  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+function timeoutSignal(caller?: AbortSignal | null, ms: number = REQUEST_TIMEOUT_MS): AbortSignal {
+  const timeout = AbortSignal.timeout(ms);
   return caller ? AbortSignal.any([caller, timeout]) : timeout;
 }
 
 export async function api<T = unknown>(path: string, opts: Opts = {}): Promise<T> {
-  const { body, retry = true, headers, signal, ...rest } = opts;
+  const { body, retry = true, headers, signal, timeoutMs, ...rest } = opts;
   const token = useAuthStore.getState().token;
   const isForm = typeof FormData !== "undefined" && body instanceof FormData;
   const res = await fetch(`${API_URL}${path}`, {
     ...rest,
     credentials: "include",
-    signal: timeoutSignal(signal),
+    signal: timeoutSignal(signal, timeoutMs),
     headers: {
       ...(isForm ? {} : body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),

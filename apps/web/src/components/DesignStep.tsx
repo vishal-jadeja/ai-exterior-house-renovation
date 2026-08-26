@@ -1,4 +1,5 @@
 "use client";
+import { msgClass } from "@/lib/format";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { LABEL_COLORS, LABEL_NAMES } from "@/lib/labels";
@@ -159,7 +160,7 @@ export function DesignStep({ projectId, regions, onActiveDesign }: Props) {
           ))}
         </div>
       )}
-      {msg && <p className="mb-2 text-sm text-zinc-600">{msg}</p>}
+      {msg && <p className={`mb-2 text-sm ${msgClass(msg)}`}>{msg}</p>}
       {!design && <p className="text-sm text-zinc-500">Create a design to start assigning materials to surfaces.</p>}
       {design && surfaces.length === 0 && <p className="text-sm text-zinc-500">No paintable surfaces yet — detect the building structure first.</p>}
       {design && surfaces.length > 0 && (

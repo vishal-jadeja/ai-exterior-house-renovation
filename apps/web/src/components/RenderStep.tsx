@@ -1,4 +1,5 @@
 "use client";
+import { msgClass } from "@/lib/format";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CompareSlider } from "@/components/CompareSlider";
 import { api, ApiError } from "@/lib/api";
@@ -47,7 +48,7 @@ export function RenderStep({ design, image }: Props) {
         if (!controller.signal.aborted) setBusy(false);
       }
     })();
-    return () => controller.abort();
+    return () => { controller.abort(); abortRef.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- resume-on-mount is keyed on design only
   }, [design?.id]);
 
@@ -87,7 +88,7 @@ export function RenderStep({ design, image }: Props) {
           {busy ? "Rendering…" : "Generate redesign"}
         </button>
       </div>
-      {msg && <p className="mb-2 text-sm text-zinc-600">{msg}</p>}
+      {msg && <p className={`mb-2 text-sm ${msgClass(msg)}`}>{msg}</p>}
       {design && design.assignments.length === 0 && <p className="text-sm text-zinc-500">Assign and save at least one material in the design above.</p>}
       {current?.url && image.url && image.width && image.height && (
         <>
