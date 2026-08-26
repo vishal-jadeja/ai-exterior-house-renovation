@@ -24,6 +24,14 @@ stack runs locally with **zero API keys**; hosted AI providers are optional upgr
 | [docs/deployment.md](docs/deployment.md) | Docker Compose locally; Vercel + Hugging Face Space + Neon + R2 for the cloud |
 | [docs/plans/](docs/plans/README.md) | Phase-by-phase build log, review findings and fixes |
 
+## What it looks like
+
+| | |
+|---|---|
+| ![Upload with quality gate](docs/screenshots/1-upload-quality-gate.jpg) **1 · Upload** — sharpness/brightness/contrast checked, guidance shown | ![Structure detection](docs/screenshots/2-structure-detection.jpg) **2 · Structure** — 23 regions detected on the sample photo, editable on the canvas |
+| ![Material assignment](docs/screenshots/3-material-assignment.jpg) **3 · Materials** — per-surface catalog filtered by what applies, design variants | ![Before/after render](docs/screenshots/4-before-after-render.jpg) **4 · Visualize** — before/after slider, openings preserved (local compositor, no API keys) |
+| ![Cost estimate](docs/screenshots/5-cost-estimate.jpg) **5 · Estimate** — areas, quantities to buy, editable rates, category subtotals | ![PDF report](docs/screenshots/6-pdf-report.jpg) **6 · Report** — downloadable PDF with images, materials, measurements, costs, assumptions |
+
 ## Quick start (Docker, ~5 min)
 
 Requirements: Docker Desktop (or Docker Engine + Compose v2), 4 GB free RAM.
