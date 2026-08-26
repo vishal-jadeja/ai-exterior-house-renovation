@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.core.logging import get_logger
-from app.providers.vision.base import Refinement
+from app.providers.vision.base import Detection, Refinement
 from app.services.taxonomy import LABELS
 
 log = get_logger("gemini")
@@ -39,6 +39,25 @@ Regions:
 {regions}
 """
 
+DETECT_PROMPT = """You are mapping the exterior of a low-rise residential building for renovation
+costing. You get a photo. Detect EVERY visible facade surface and opening — do not stop at a few.
+
+Allowed labels: {labels}.
+
+For each region return a normalised bounding box [x0,y0,x1,y1] with each value in [0,1] (x right,
+y down), the label, and a short human name. Detect every wall band, every window and door,
+balconies, railings, pillars, parapets, gates and roof edges you can see — typically 8-20 regions
+for a normal facade. Ignore people, cars, trees, sky and ground.
+
+Also report:
+- floors: number of storeys visible (1-6).
+- door_height_ft: your best estimate of the main door height in feet (usually 7).
+
+Return ONLY JSON:
+{{"regions":[{{"label":"...","bbox":[x0,y0,x1,y1],"name":"..."}}],
+ "floors":2,"door_height_ft":7,"notes":"..."}}
+"""
+
 
 class GeminiRefiner:
     name = "gemini"
@@ -57,21 +76,36 @@ class GeminiRefiner:
             log.warning("gemini_refine_failed", error=str(exc)[:300])
             return None
 
-    def _call(self, jpeg: bytes, regions: list[dict]) -> Refinement | None:
+    async def detect(self, jpeg: bytes) -> Detection | None:
+        """Primary detection: enumerate the whole facade when no local segmenter is available."""
+        if not self.api_key:
+            return None
+        try:
+            return await asyncio.wait_for(asyncio.to_thread(self._detect, jpeg), timeout=90)
+        except Exception as exc:  # noqa: BLE001 - optional tier, must never fail the job
+            log.warning("gemini_detect_failed", error=str(exc)[:300])
+            return None
+
+    def _generate(self, jpeg: bytes, prompt: str, max_output_tokens: int) -> str:
         from google import genai
         from google.genai import types
 
         client = genai.Client(api_key=self.api_key)
-        prompt = PROMPT.format(labels=", ".join(LABELS), regions=json.dumps(regions))
         contents: list = [types.Part.from_bytes(data=jpeg, mime_type="image/jpeg"), prompt]
         resp = client.models.generate_content(
             model=self.model,
             contents=contents,
             config=types.GenerateContentConfig(
-                response_mime_type="application/json", temperature=0.1, max_output_tokens=2048
+                response_mime_type="application/json",
+                temperature=0.1,
+                max_output_tokens=max_output_tokens,
             ),
         )
-        text = (resp.text or "").strip()
+        return (resp.text or "").strip()
+
+    def _call(self, jpeg: bytes, regions: list[dict]) -> Refinement | None:
+        prompt = PROMPT.format(labels=", ".join(LABELS), regions=json.dumps(regions))
+        text = self._generate(jpeg, prompt, max_output_tokens=2048)
         try:
             data = json.loads(text)
             ref = Refinement.model_validate(data)
@@ -84,6 +118,21 @@ class GeminiRefiner:
             a for a in ref.additions if a.label in LABELS and all(0 <= v <= 1 for v in a.bbox)
         ][:6]
         return ref
+
+    def _detect(self, jpeg: bytes) -> Detection | None:
+        prompt = DETECT_PROMPT.format(labels=", ".join(LABELS))
+        text = self._generate(jpeg, prompt, max_output_tokens=4096)
+        try:
+            data = json.loads(text)
+            det = Detection.model_validate(data)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            log.warning("gemini_bad_json", error=str(exc)[:200], text=text[:200])
+            return None
+        # Keep only regions with a known label and an in-range box; the rest is user-editable.
+        det.regions = [
+            r for r in det.regions if r.label in LABELS and all(0 <= v <= 1 for v in r.bbox)
+        ]
+        return det
 
 
 def get_refiner():

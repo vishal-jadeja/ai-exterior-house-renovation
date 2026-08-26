@@ -18,14 +18,20 @@ Running `docker compose` directly (not via `make`) requires `.env` to exist.
 `NEXT_PUBLIC_API_URL` is baked into the web image at **build** time (`infra/Dockerfile.web`
 `ARG`, set in `docker-compose.yml`), and `CORS_ORIGINS` on the API must list the web origin.
 
-## Cloud (planned layout, free tiers)
+## Cloud (free tiers, no credit card)
+
+This layout needs no payment method anywhere. The API+worker container carries **no local ML
+model** (`infra/Dockerfile.free`, no torch/transformers): Gemini is the primary detector
+(`DETECTION_PROVIDER=gemini`), and diffusion renders are HTTP calls (Cloudflare Workers AI / fal)
+with the local compositor as the always-available floor. `render.yaml` is the ready blueprint.
 
 | Piece | Target | Notes |
 |---|---|---|
-| Web | Vercel | `apps/web`, env `NEXT_PUBLIC_API_URL=https://<space>.hf.space` |
-| API + worker | Hugging Face Space (Docker) | One container from `infra/Dockerfile.api` running `alembic upgrade head && python -m app.seed`, then uvicorn and `python -m app.worker` under a small supervisor (or `sh -c "python -m app.worker & uvicorn …"`). Persistent `/models` needs a paid persistent-storage Space or accept re-download on restart. |
-| Postgres | Neon | `DATABASE_URL=postgresql+asyncpg://…?ssl=require` |
-| Object storage | Cloudflare R2 | `S3_ENDPOINT_URL=https://<account>.r2.cloudflarestorage.com`, `S3_PUBLIC_ENDPOINT_URL` the same (or a custom domain), `S3_REGION=auto`. Add a CORS rule on the bucket allowing `GET` from the web origin — the region editor loads the photo into a canvas. |
+| Web | Vercel | `apps/web`, env `NEXT_PUBLIC_API_URL=https://<app>.onrender.com` (baked at build time). |
+| API + worker | Render (Docker, free) | `render.yaml` → `infra/Dockerfile.free`; `infra/space-entrypoint.sh` runs `alembic upgrade head`, `python -m app.seed`, then the worker + uvicorn in one container on `$PORT`. Free service sleeps when idle (cold start on first hit). Hugging Face Space (Docker) works too. |
+| Postgres | Supabase | `DATABASE_URL=postgresql+asyncpg://postgres:<pwd>@<host>:5432/postgres?ssl=require`. |
+| Object storage | Supabase Storage (S3) | Create bucket `renovation` and S3 access keys (Storage → S3). `S3_ENDPOINT_URL=S3_PUBLIC_ENDPOINT_URL=https://<ref>.storage.supabase.co/storage/v1/s3`, `S3_REGION=<project region>` (e.g. `us-east-1` — Supabase validates it, so **not** `auto`). Add a bucket CORS rule allowing `GET` from the web origin — the region editor loads the photo into a canvas via the presigned URL. |
+| Structure detection | Gemini | `DETECTION_PROVIDER=gemini` + `GEMINI_API_KEY` (Google AI Studio, free, no card). Detects the full facade; regions stay editable on the canvas. |
 
 Production checklist (enforced by `APP_ENV=prod` at boot):
 - `JWT_SECRET` random, ≥ 32 chars
@@ -35,9 +41,11 @@ Production checklist (enforced by `APP_ENV=prod` at boot):
 - `CORS_ORIGINS` = the Vercel origin only (no localhost)
 - OpenAPI docs are disabled in prod automatically
 
-Optional AI keys: `GEMINI_API_KEY` (region refinement), `FAL_KEY` and/or
-`CF_ACCOUNT_ID` + `CF_API_TOKEN` (diffusion renders). Without them the app still works end to end
-using the local model and compositor.
+AI keys: `GEMINI_API_KEY` drives structure detection when `DETECTION_PROVIDER=gemini` (and refines
+regions when the local SegFormer is used); `FAL_KEY` and/or `CF_ACCOUNT_ID` + `CF_API_TOKEN` add
+diffusion renders. With the local SegFormer (`DETECTION_PROVIDER=segformer`) and the built-in
+compositor the app runs end to end with no keys at all; the free cloud layout above instead relies
+on `GEMINI_API_KEY` for detection, since it ships without the local model.
 
 ## CI
 

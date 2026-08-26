@@ -28,6 +28,40 @@ async def noop(db, job):
     return {"ok": True}
 
 
+def _vision_jpeg(rgb: np.ndarray, max_side: int = 1024) -> bytes:
+    """Downscaled JPEG handed to the vision model (both refine and primary-detect paths)."""
+    small = PILImage.fromarray(rgb)
+    small.thumbnail((max_side, max_side))
+    buf = io.BytesIO()
+    small.save(buf, format="JPEG", quality=85)
+    return buf.getvalue()
+
+
+def _bbox_candidate(
+    label: str, bbox: list[float], name: str | None, w: int, h: int
+) -> RegionCandidate:
+    """Normalised [x0,y0,x1,y1] → axis-aligned rectangular candidate (the user refines it)."""
+    x0, y0, x1, y1 = bbox[0] * w, bbox[1] * h, bbox[2] * w, bbox[3] * h
+    poly = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
+    return RegionCandidate(
+        label=label,
+        polygon=[[int(x), int(y)] for x, y in poly],
+        pixel_area=polygon_area(poly),
+        bbox=[int(x0), int(y0), int(x1 - x0), int(y1 - y0)],
+        confidence=0.6,
+        name=name or "",
+        source="gemini",
+    )
+
+
+def _renumber(candidates: list[RegionCandidate]) -> None:
+    """Assign human names in reading order (top rows first, then left-to-right)."""
+    counters: dict[str, int] = {}
+    for c in sorted(candidates, key=lambda c: (c.bbox[1] // 50, c.bbox[0])):
+        counters[c.label] = counters.get(c.label, 0) + 1
+        c.name = f"{HUMAN[c.label]} {counters[c.label]}"
+
+
 @register("segment")
 async def segment_job(db, job):
     project = await db.get(Project, job.payload["project_id"])
@@ -38,74 +72,79 @@ async def segment_job(db, job):
     rgb = np.asarray(PILImage.open(io.BytesIO(jpeg)).convert("RGB"))
     h, w = rgb.shape[:2]
 
-    if not get_settings().segmentation_enabled:
-        # Deployments without the ML extra (or that just want to disable the model) skip
-        # straight to an empty, user-drawn-only region set rather than failing on import.
-        log.info("segmentation_disabled", project_id=project.id)
-        candidates: list[RegionCandidate] = []
-        guidance = "Automatic detection is disabled — use “Draw box” to add regions by hand."
-    else:
-        from app.services.segmentation import segment
-
-        label_map, conf = await asyncio.to_thread(segment, rgb)
-        candidates = extract_regions(label_map, conf)
-        guidance = None
-        log.info("segmented", project_id=project.id, regions=len(candidates))
-
-    # Optional second opinion (Gemini). Never blocks.
+    settings = get_settings()
     refiner = get_refiner()
-    refinement = None
-    if refiner.name != "noop":
-        small = PILImage.fromarray(rgb)
-        small.thumbnail((1024, 1024))
-        buf = io.BytesIO()
-        small.save(buf, format="JPEG", quality=85)
-        payload = [
-            {
-                "id": str(i),
-                "label": c.label,
-                "bbox": [
-                    round(c.bbox[0] / w, 3),
-                    round(c.bbox[1] / h, 3),
-                    round((c.bbox[0] + c.bbox[2]) / w, 3),
-                    round((c.bbox[1] + c.bbox[3]) / h, 3),
-                ],
-            }
-            for i, c in enumerate(candidates)
-        ]
-        refinement = await refiner.refine(buf.getvalue(), payload)
-    if refinement:
-        relabel = {r.id: r.label for r in refinement.relabels}
-        kept: list[RegionCandidate] = []
-        for i, c in enumerate(candidates):
-            new = relabel.get(str(i))
-            if new == "ignore":
-                continue
-            if new and new != c.label:
-                c.label, c.source, c.confidence = new, "gemini", max(c.confidence, 0.7)
-            kept.append(c)
-        for a in refinement.additions:
-            x0, y0, x1, y1 = a.bbox[0] * w, a.bbox[1] * h, a.bbox[2] * w, a.bbox[3] * h
-            poly = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]]
-            kept.append(
-                RegionCandidate(
-                    label=a.label,
-                    polygon=[[int(x), int(y)] for x, y in poly],
-                    pixel_area=polygon_area(poly),
-                    bbox=[int(x0), int(y0), int(x1 - x0), int(y1 - y0)],
-                    confidence=0.6,
-                    name=a.name or "",
-                    source="gemini",
-                )
-            )
-        candidates = kept
-        if refinement.floors:
-            project.floors = refinement.floors
-        # re-number names after relabels/additions
-        counters: dict[str, int] = {}
-        for c in sorted(candidates, key=lambda c: (c.bbox[1] // 50, c.bbox[0])):
-            counters[c.label] = counters.get(c.label, 0) + 1
-            c.name = f"{HUMAN[c.label]} {counters[c.label]}"
+    gemini_used = False
+
+    if settings.detection_provider == "gemini" and refiner.name != "noop":
+        # Hosted vision model as the PRIMARY detector — no local weights, for lean free-tier
+        # deploys. detect() enumerates the whole facade, so the SegFormer refine pass is skipped.
+        detection = await refiner.detect(_vision_jpeg(rgb))
+        if detection:
+            candidates: list[RegionCandidate] = [
+                _bbox_candidate(r.label, r.bbox, r.name, w, h) for r in detection.regions
+            ]
+            gemini_used = True
+            if detection.floors:
+                project.floors = detection.floors
+            _renumber(candidates)
+        else:
+            candidates = []
+        guidance = (
+            None
+            if candidates
+            else "Automatic detection found nothing — use “Draw box” to add regions by hand."
+        )
+        log.info("gemini_detected", project_id=project.id, regions=len(candidates))
+    else:
+        if not settings.segmentation_enabled or settings.detection_provider == "none":
+            # Deployments without the ML extra (or that just want to disable the model) skip
+            # straight to an empty, user-drawn-only region set rather than failing on import.
+            log.info("segmentation_disabled", project_id=project.id)
+            candidates = []
+            guidance = "Automatic detection is disabled — use “Draw box” to add regions by hand."
+        else:
+            from app.services.segmentation import segment
+
+            label_map, conf = await asyncio.to_thread(segment, rgb)
+            candidates = extract_regions(label_map, conf)
+            guidance = None
+            log.info("segmented", project_id=project.id, regions=len(candidates))
+
+        # Optional second opinion (Gemini). Never blocks.
+        refinement = None
+        if refiner.name != "noop":
+            payload = [
+                {
+                    "id": str(i),
+                    "label": c.label,
+                    "bbox": [
+                        round(c.bbox[0] / w, 3),
+                        round(c.bbox[1] / h, 3),
+                        round((c.bbox[0] + c.bbox[2]) / w, 3),
+                        round((c.bbox[1] + c.bbox[3]) / h, 3),
+                    ],
+                }
+                for i, c in enumerate(candidates)
+            ]
+            refinement = await refiner.refine(_vision_jpeg(rgb), payload)
+        if refinement:
+            gemini_used = True
+            relabel = {r.id: r.label for r in refinement.relabels}
+            kept: list[RegionCandidate] = []
+            for i, c in enumerate(candidates):
+                new = relabel.get(str(i))
+                if new == "ignore":
+                    continue
+                if new and new != c.label:
+                    c.label, c.source, c.confidence = new, "gemini", max(c.confidence, 0.7)
+                kept.append(c)
+            for a in refinement.additions:
+                kept.append(_bbox_candidate(a.label, a.bbox, a.name, w, h))
+            candidates = kept
+            if refinement.floors:
+                project.floors = refinement.floors
+            _renumber(candidates)  # re-number names after relabels/additions
 
     # Retire previous model/gemini regions; user-drawn regions are preserved. Soft-deactivate
     # rather than delete: a hard delete cascades into design_assignments and silently destroys
@@ -141,7 +180,7 @@ async def segment_job(db, job):
     await db.commit()
     return {
         "regions": len(candidates),
-        "refined": bool(refinement),
+        "refined": gemini_used,
         "floors": project.floors,
         "labels": sorted({c.label for c in candidates}),
         "guidance": guidance,

@@ -1,6 +1,7 @@
 # Render Blueprint: free web service running API + worker from infra/Dockerfile.free.
-# Postgres = Neon, object storage = Cloudflare R2, web = Vercel. Fill the sync:false secrets
-# in the Render dashboard on first deploy.
+# Supabase = Postgres + S3-compatible object storage (both no-card free tiers), web = Vercel.
+# No local ML model: Gemini is the primary detector (DETECTION_PROVIDER=gemini). Fill the
+# sync:false secrets in the Render dashboard on first deploy.
 services:
   - type: web
     name: renovation-api
@@ -16,25 +17,32 @@ services:
         value: "true"
       - key: SEGMENTATION_ENABLED
         value: "false"
+      - key: DETECTION_PROVIDER
+        value: gemini
       - key: S3_BUCKET
         value: renovation
       - key: S3_REGION
-        value: auto
+        # Supabase validates the region — set it to your project's region (not "auto").
+        value: us-east-1
       - key: CORS_ORIGINS
         value: https://ai-exterior-house-renovation.vercel.app
       - key: JWT_SECRET
         generateValue: true
       - key: DATABASE_URL
-        sync: false
+        sync: false   # Supabase: postgresql+asyncpg://postgres:<pwd>@<host>:5432/postgres?ssl=require
       - key: S3_ENDPOINT_URL
-        sync: false
+        sync: false   # Supabase: https://<ref>.storage.supabase.co/storage/v1/s3
       - key: S3_PUBLIC_ENDPOINT_URL
-        sync: false
+        sync: false   # same as S3_ENDPOINT_URL (public HTTPS, used for presigned URLs)
       - key: S3_ACCESS_KEY
-        sync: false
+        sync: false   # Supabase Storage → S3 access keys
       - key: S3_SECRET_KEY
         sync: false
       - key: GEMINI_API_KEY
-        sync: false
+        sync: false   # required when DETECTION_PROVIDER=gemini (Google AI Studio, free, no card)
       - key: FAL_KEY
+        sync: false   # optional diffusion renders; without it the local compositor is used
+      - key: CF_ACCOUNT_ID
+        sync: false   # optional: Cloudflare Workers AI (free, no card) diffusion renders
+      - key: CF_API_TOKEN
         sync: false

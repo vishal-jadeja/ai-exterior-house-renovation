@@ -8,12 +8,13 @@ contractor.
 Built as a 24-hour prototype for the E2M Solutions AI Engineer practical assessment. The whole
 stack runs locally with **zero API keys**; hosted AI providers are optional upgrades.
 
-> **For reviewers — please run it locally (one command, ~5 minutes).**
-> There is intentionally no public demo URL: the backend needs S3-compatible object storage, and
-> every free-tier provider (Cloudflare R2, AWS) requires a payment method I chose not to attach for
-> an assessment. The Docker Compose stack below is the reviewed artifact — it is what CI builds,
-> boots and smoke-tests on every push. A cloud layout (Vercel + Hugging Face Space + Neon + R2) is
-> fully prepared in [docs/deployment.md](docs/deployment.md) and needs only credentials.
+> **For reviewers — the quickest path is to run it locally (one command, ~5 minutes).**
+> The Docker Compose stack below is the reviewed artifact — it is what CI builds, boots and
+> smoke-tests on every push. A fully **card-free** cloud layout is also prepared
+> ([docs/deployment.md](docs/deployment.md), blueprint in [`render.yaml`](render.yaml)): **Vercel**
+> (web) + **Render** (API+worker, no local ML model) + **Supabase** (Postgres + S3-compatible
+> storage) + **Gemini** (structure detection) — every tier is free and needs no payment method. It
+> needs only credentials to stand up and share a public link.
 
 | Doc | What it covers |
 |---|---|
@@ -101,8 +102,9 @@ key with comments). Notable:
 
 | Key | Purpose |
 |---|---|
-| `SEGMENTATION_MODEL` | HF SegFormer checkpoint; `SEGMENTATION_ENABLED=false` skips it (draw regions by hand) |
-| `GEMINI_API_KEY` | Optional: Gemini refines/relabels detected regions and adds missed ones |
+| `DETECTION_PROVIDER` | `segformer` (local model, default) · `gemini` (hosted, no local weights — for lean free-tier deploys) · `none` (draw by hand) |
+| `SEGMENTATION_MODEL` | HF SegFormer checkpoint (used when `DETECTION_PROVIDER=segformer`); `SEGMENTATION_ENABLED=false` skips it (draw regions by hand) |
+| `GEMINI_API_KEY` | Primary detector when `DETECTION_PROVIDER=gemini`; otherwise optional — refines/relabels detected regions and adds missed ones |
 | `FAL_KEY`, `CF_ACCOUNT_ID`+`CF_API_TOKEN` | Optional diffusion inpainting renderers; `RENDER_PROVIDER_ORDER` sets the fallback order, local compositor is always last |
 | `MAX_UPLOAD_BYTES`, `MIN_IMAGE_DIMENSION` | Upload limits enforced server-side |
 | `APP_ENV=prod` | Enables the production guard (real JWT secret, secure cookies, non-default S3 keys, no localhost CORS) |

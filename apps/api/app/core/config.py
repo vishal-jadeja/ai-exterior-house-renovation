@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     min_image_dimension: int = 640
 
     # AI providers (all optional; missing key => tier disabled)
+    # Primary structure detector: "segformer" runs the local model (needs the `ml` extra),
+    # "gemini" uses the hosted vision model (no local weights — for lean free-tier deploys),
+    # "none" skips detection so every region is drawn by hand.
+    detection_provider: str = "segformer"
     segmentation_model: str = "Xpitfire/segformer-finetuned-segments-cmp-facade"
     segmentation_enabled: bool = True
     gemini_api_key: str | None = None
