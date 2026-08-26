@@ -13,7 +13,7 @@ Reviewer-ready: one-command local run, live demo URL, and the documentation deli
 - Polish: loading states, error toasts, empty states.
 
 ## Checklist
-- [ ] Docs written
+- [x] Docs written (README.md, docs/architecture.md, user-workflow.md, estimation.md, limitations.md, deployment.md)
 - [ ] Cloud deployment live and smoke-tested
 - [ ] Clean-clone `docker compose up` verified
 
