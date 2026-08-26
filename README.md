@@ -1,3 +1,13 @@
+---
+title: AI Exterior House Renovation
+emoji: 🏠
+colorFrom: gray
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # AI-Based Exterior House Renovation & Cost Estimation
 
 Upload a photo of a house exterior, let the system map its surfaces (walls, windows, pillars,
