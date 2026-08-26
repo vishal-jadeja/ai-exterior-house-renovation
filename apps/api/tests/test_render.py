@@ -134,3 +134,63 @@ async def test_render_route_and_job(client, storage):  # noqa: F811
     other = await register(client, "b@example.com")
     assert (await client.get(f"/renders/{rs[0]['id']}", headers=auth(other))).status_code == 404
     assert (await client.get(f"/renders/{rs[0]['id']}", headers=auth(t))).status_code == 200
+
+
+# A real balcony detection from samples/house-1.jpg. Its 4-corner approximation is a near-collinear
+# sliver; before the convexity/area guard the resulting homography sent cv2.warpPerspective into
+# an effectively infinite BORDER_REFLECT walk and the worker hung forever on the render job.
+SLIVER_BALCONY = [
+    [442, 159],
+    [438, 139],
+    [423, 130],
+    [337, 111],
+    [307, 119],
+    [278, 115],
+    [251, 134],
+    [181, 130],
+    [175, 135],
+    [175, 146],
+    [277, 153],
+    [282, 158],
+    [267, 165],
+    [314, 174],
+    [390, 168],
+    [427, 172],
+]
+
+
+def test_quad_rejects_degenerate_approximation():
+    import cv2
+
+    from app.providers.render.local import _quad
+
+    poly = np.array(SLIVER_BALCONY, np.float32)
+    q = _quad(poly)
+    assert cv2.isContourConvex(q.reshape(-1, 1, 2))
+    assert abs(cv2.contourArea(q.reshape(-1, 1, 2))) >= 0.5 * abs(cv2.contourArea(poly))
+
+
+def test_sliver_region_renders_quickly():
+    import time
+
+    from app.providers.render.base import RenderRegion
+    from app.providers.render.local import render_region
+
+    rng = np.random.default_rng(1)
+    orig = rng.integers(0, 255, (1080, 1920, 3), np.uint8)
+    tex = rng.integers(0, 255, (512, 512, 3), np.uint8)
+    r = RenderRegion(
+        region_id="r",
+        label="balcony",
+        name="Balcony 1",
+        polygon=SLIVER_BALCONY,
+        material_id="m",
+        category="cladding",
+        material_name="m",
+        prompt_hint="",
+        texture=tex,
+        color_hex=None,
+    )
+    t = time.time()
+    render_region(orig.astype(np.float32).copy(), orig, r, 20.0, [])
+    assert time.time() - t < 5

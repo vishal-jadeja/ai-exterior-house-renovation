@@ -15,7 +15,7 @@ Reviewer-ready: one-command local run, live demo URL, and the documentation deli
 ## Checklist
 - [x] Docs written (README.md, docs/architecture.md, user-workflow.md, estimation.md, limitations.md, deployment.md)
 - [ ] Cloud deployment live and smoke-tested
-- [ ] Clean-clone `docker compose up` verified
+- [x] Clean-clone `docker compose up` verified (make up + full API smoke test 2026-08-26; CI compose job repeats it on every push)
 
 ## Acceptance criteria
 - A reviewer can run the app locally in <5 min and open the live URL.

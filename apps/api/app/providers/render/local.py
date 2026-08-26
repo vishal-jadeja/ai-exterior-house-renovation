@@ -29,17 +29,30 @@ def _hex(color: str | None, default=(230, 224, 210)) -> np.ndarray:
     return np.array([int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)], np.float32)
 
 
+def _bbox_quad(cnt: np.ndarray) -> np.ndarray:
+    x, y, w, h = cv2.boundingRect(cnt)
+    return np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], np.float32)
+
+
 def _quad(poly: np.ndarray) -> np.ndarray:
-    """Approximate an arbitrary polygon by its dominant 4-corner quad (facade plane estimate)."""
+    """Approximate an arbitrary polygon by its dominant 4-corner quad (facade plane estimate).
+
+    A thin / non-convex / near-collinear quad gives an ill-conditioned homography whose warp maps
+    pixels to astronomically large source coordinates — `cv2.warpPerspective` then spends minutes
+    (or forever) per pixel. Such quads fall back to the bounding box (a pure translation).
+    """
     cnt = poly.reshape(-1, 1, 2).astype(np.float32)
     peri = cv2.arcLength(cnt, True)
+    full_area = abs(cv2.contourArea(cnt))
     for f in (0.02, 0.04, 0.08, 0.15):
         approx = cv2.approxPolyDP(cnt, f * peri, True)
         if len(approx) == 4:
-            pts = approx.reshape(4, 2)
-            return _order(pts)
-    x, y, w, h = cv2.boundingRect(cnt)
-    return np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], np.float32)
+            pts = _order(approx.reshape(4, 2))
+            area = abs(cv2.contourArea(pts.reshape(-1, 1, 2)))
+            if cv2.isContourConvex(pts.reshape(-1, 1, 2)) and area >= 0.5 * full_area:
+                return pts
+            break
+    return _bbox_quad(cnt)
 
 
 def _order(pts: np.ndarray) -> np.ndarray:
@@ -94,8 +107,10 @@ def render_region(
         tiled = _tiled(r.texture, max(qw, 2), max(qh, 2), px_per_ft)
         src = np.array([[0, 0], [qw, 0], [qw, qh], [0, qh]], np.float32)
         H_ = cv2.getPerspectiveTransform(src, quad)
+        # BORDER_WRAP continues the tiling outside the quad and, unlike BORDER_REFLECT, costs
+        # O(1) per pixel however far the homography maps it.
         base = cv2.warpPerspective(
-            tiled, H_, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT
+            tiled, H_, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_WRAP
         ).astype(np.float32)
         if r.category == "texture" and r.color_hex:
             tint = _hex(r.color_hex) / 255.0
