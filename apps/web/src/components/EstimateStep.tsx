@@ -5,7 +5,13 @@ import { money, num } from "@/lib/format";
 import { LABEL_NAMES } from "@/lib/labels";
 import type { Design, Estimate, Project, Rate } from "@/lib/types";
 
-type Props = { project: Project; design: Design | null; onProjectChanged: (p: Project) => void };
+type Props = {
+  project: Project;
+  design: Design | null;
+  onProjectChanged: (p: Project) => void;
+  /** Bumped whenever regions are saved so the stale flag is re-read (design identity does not change). */
+  regionsVersion?: number;
+};
 
 const CONF: Record<string, string> = { high: "bg-emerald-100 text-emerald-800", medium: "bg-amber-100 text-amber-800", low: "bg-red-100 text-red-800" };
 const CONF_FALLBACK = "bg-zinc-100 text-zinc-700";
@@ -15,7 +21,7 @@ const METHOD: Record<string, string> = {
 };
 
 /** Spec 5.5–5.7: measurements → areas → quantities → itemised cost with editable rates. */
-export function EstimateStep({ project, design, onProjectChanged }: Props) {
+export function EstimateStep({ project, design, onProjectChanged, regionsVersion = 0 }: Props) {
   const [est, setEst] = useState<Estimate | null>(null);
   const [rates, setRates] = useState<Rate[]>([]);
   const [busy, setBusy] = useState(false);
@@ -31,7 +37,8 @@ export function EstimateStep({ project, design, onProjectChanged }: Props) {
     if (design) {
       try { setEst(await api<Estimate>(`/designs/${design.id}/estimate`)); } catch { setEst(null); }
     } else setEst(null);
-  }, [project.id, design]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- regionsVersion only forces a refetch
+  }, [project.id, design, regionsVersion]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch-then-set
   useEffect(() => { load().catch(() => {}); }, [load]);
 
@@ -66,15 +73,25 @@ export function EstimateStep({ project, design, onProjectChanged }: Props) {
     });
   };
 
-  const applyRates = () => run(async () => {
+  const applyRates = () => {
     const items = Object.entries(edits).map(([material_id, v]) => ({
       material_id,
       material_rate: Number(v.material_rate),
       labor_rate: Number(v.labor_rate),
     }));
+    const bad = Object.entries(edits).find(([, v]) =>
+      v.material_rate.trim() === "" || v.labor_rate.trim() === "" ||
+      !Number.isFinite(Number(v.material_rate)) || !Number.isFinite(Number(v.labor_rate)) ||
+      Number(v.material_rate) < 0 || Number(v.labor_rate) < 0);
+    if (bad) {
+      setMsg("Every edited rate needs a number of 0 or more — a blank field would price that material at zero. Use \"Reset to catalog rates\" to go back to defaults.");
+      return;
+    }
+    return run(async () => {
     if (items.length) await api(`/projects/${project.id}/rate-card`, { method: "PUT", body: { rates: items } });
     setEdits({});
-  });
+    });
+  };
 
   const resetRates = () => run(async () => { await api(`/projects/${project.id}/rate-card`, { method: "DELETE" }); setEdits({}); });
 

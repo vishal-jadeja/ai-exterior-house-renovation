@@ -60,7 +60,9 @@ class Material(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     unit: Mapped[str] = mapped_column(String(16), nullable=False)
-    quantity_unit: Mapped[str] = mapped_column(String(16), nullable=False, default="sqft")
+    quantity_unit: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="sqft", server_default="sqft"
+    )
     coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
     coats: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     piece_area_sqft: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -152,7 +154,10 @@ class RateCard(TimestampMixin, Base):
 
 class Estimate(TimestampMixin, Base):
     __tablename__ = "estimates"
-    __table_args__ = (Index("ix_estimates_design_id", "design_id"),)
+    __table_args__ = (
+        Index("ix_estimates_design_id", "design_id"),
+        UniqueConstraint("design_id", "version", name="uq_estimates_design_version"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_id)
     design_id: Mapped[str] = mapped_column(

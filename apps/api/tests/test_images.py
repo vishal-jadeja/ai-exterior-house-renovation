@@ -138,6 +138,15 @@ async def test_reupload_deactivates_regions_and_keeps_assignments(client, storag
     d2 = (await client.get(f"/projects/{pid}/designs", headers=auth(t))).json()[0]
     assert len(d2["assignments"]) == 1
 
+    # ...but nothing downstream may pretend those orphaned assignments still mean something:
+    # an estimate would be ₹0 and a render would hand back the untouched photo as "redesigned".
+    for path in (f"/designs/{d['id']}/estimate", f"/designs/{d['id']}/render"):
+        r = await client.post(path, headers=auth(t))
+        assert r.status_code == 409, (path, r.text)
+        assert "regions" in r.json()["detail"].lower()
+    r = await client.post(f"/designs/{d['id']}/report", headers=auth(t))
+    assert r.status_code == 409
+
 
 async def test_upload_foreign_project_404(client, storage):
     a = await register(client, "a@example.com")

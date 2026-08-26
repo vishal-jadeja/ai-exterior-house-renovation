@@ -8,7 +8,11 @@ from app.core.ratelimit import limiter
 from app.models import Design, Image, Job, Project, Report
 from app.providers.storage import s3
 from app.routers.designs import OwnedDesign
-from app.routers.estimates import current_fingerprint, latest_estimate_row
+from app.routers.estimates import (
+    current_fingerprint,
+    latest_estimate_row,
+    require_active_assignments,
+)
 from app.schemas.report import ReportOut
 from app.services.jobs import enqueue
 
@@ -35,6 +39,7 @@ async def _out(db: DB, r: Report, job_id: str | None = None) -> ReportOut:
 @router.post("/designs/{design_id}/report", response_model=ReportOut, status_code=202)
 @limiter.limit("6/minute")
 async def start_report(request: Request, design: OwnedDesign, db: DB, user: CurrentUser):
+    await require_active_assignments(db, design)
     est = await latest_estimate_row(db, design.id)
     if est is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Calculate an estimate first")

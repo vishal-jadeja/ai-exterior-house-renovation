@@ -41,7 +41,7 @@ export function StructureStep({ projectId, image, onRegionsChanged }: Props) {
   async function detect() {
     if (
       regions.length > 0 &&
-      !window.confirm("Re-running detection replaces model-detected regions — materials assigned to them will be reset. Regions you added or edited yourself are kept. Continue?")
+      !window.confirm("Re-running detection replaces model-detected regions — regions you added or edited yourself are kept. Material choices are kept where a region still exists — review the design step afterwards. Continue?")
     ) {
       return;
     }

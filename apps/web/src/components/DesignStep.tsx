@@ -28,13 +28,25 @@ export function DesignStep({ projectId, regions, onActiveDesign }: Props) {
 
   const design = useMemo(() => designs.find((d) => d.id === current) ?? null, [designs, current]);
   useEffect(() => { onActiveDesign?.(design); }, [design, onActiveDesign]);
+  // Assignments on soft-deactivated regions (deleted, re-detected, photo replaced) survive on the
+  // server by design, but the API only accepts active region ids — sending them back would 422
+  // every save. Keep the draft to regions that currently exist.
+  const regionIds = useMemo(() => new Set(regions.map((r) => r.id)), [regions]);
   useEffect(() => {
     const map: Record<string, Assignment> = {};
-    design?.assignments.forEach((a) => { map[a.region_id] = a; });
+    design?.assignments.forEach((a) => { if (regionIds.has(a.region_id)) map[a.region_id] = a; });
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reset draft when switching designs
     setDraft(map);
     setDirty(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- region changes are pruned below without discarding edits
   }, [design]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- prune orphans, keep unsaved edits
+    setDraft((d) => {
+      const kept = Object.fromEntries(Object.entries(d).filter(([id]) => regionIds.has(id)));
+      return Object.keys(kept).length === Object.keys(d).length ? d : kept;
+    });
+  }, [regionIds]);
 
   const byLabel = (label: RegionLabel) => materials.filter((m) => m.applicable_labels.includes(label));
   // window/door are informational only; roof_edge is hidden only while no material applies to it.
@@ -93,7 +105,9 @@ export function DesignStep({ projectId, regions, onActiveDesign }: Props) {
     setBusy(true);
     setMsg(null);
     try {
-      const assignments = Object.values(draft).map((a) => ({ region_id: a.region_id, material_id: a.material_id, color_hex: a.color_hex ?? null }));
+      const assignments = Object.values(draft)
+        .filter((a) => regionIds.has(a.region_id))
+        .map((a) => ({ region_id: a.region_id, material_id: a.material_id, color_hex: a.color_hex ?? null }));
       await api(`/designs/${design.id}/assignments`, { method: "PUT", body: { assignments } });
       await load();
       setMsg("Design saved.");

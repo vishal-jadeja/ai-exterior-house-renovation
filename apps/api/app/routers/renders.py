@@ -8,6 +8,7 @@ from app.core.ratelimit import limiter
 from app.models import Design, Image, Job, Project, Render
 from app.providers.storage import s3
 from app.routers.designs import OwnedDesign
+from app.routers.estimates import require_active_assignments
 from app.schemas.render import RenderOut
 from app.services.jobs import enqueue
 
@@ -34,8 +35,7 @@ async def _out(db: DB, r: Render, job_id: str | None = None) -> RenderOut:
 @router.post("/designs/{design_id}/render", response_model=RenderOut, status_code=202)
 @limiter.limit("6/minute")
 async def start_render(request: Request, design: OwnedDesign, db: DB, user: CurrentUser):
-    if not design.assignments:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Assign at least one material first")
+    await require_active_assignments(db, design)
     render = Render(design_id=design.id, status="queued")
     db.add(render)
     await db.flush()

@@ -6,6 +6,7 @@ import json
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import DB, OwnedProject
@@ -28,8 +29,8 @@ async def _regions(db: AsyncSession, project_id: str) -> list[dict]:
     return [region_dict(r) for r in rows]
 
 
-async def _image(db: AsyncSession, project_id: str) -> Image:
-    img = (
+async def _image_or_none(db: AsyncSession, project_id: str) -> Image | None:
+    return (
         (
             await db.execute(
                 select(Image)
@@ -40,9 +41,42 @@ async def _image(db: AsyncSession, project_id: str) -> Image:
         .scalars()
         .first()
     )
+
+
+async def _image(db: AsyncSession, project_id: str) -> Image:
+    img = await _image_or_none(db, project_id)
     if img is None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Upload a house photo first")
     return img
+
+
+async def active_assignments(db: AsyncSession, design: Design) -> list[tuple[str, str]]:
+    """(region_id, material_id) pairs whose region is still active. Assignments deliberately
+    survive re-detection / photo replacement (the region rows are only deactivated), so a
+    non-empty `design.assignments` is not proof there is anything left to estimate or render."""
+    active = set(
+        (
+            await db.execute(
+                select(Region.id).where(
+                    Region.project_id == design.project_id, Region.is_active.is_(True)
+                )
+            )
+        ).scalars()
+    )
+    return [(a.region_id, a.material_id) for a in design.assignments if a.region_id in active]
+
+
+async def require_active_assignments(db: AsyncSession, design: Design) -> list[tuple[str, str]]:
+    pairs = await active_assignments(db, design)
+    if not pairs:
+        if design.assignments:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "The regions this design was built on have changed — review the detected "
+                "structure and assign materials again",
+            )
+        raise HTTPException(status.HTTP_409_CONFLICT, "Assign at least one material first")
+    return pairs
 
 
 async def _rates(db: AsyncSession, project: Project) -> tuple[dict[str, dict], list[RateOut]]:
@@ -80,7 +114,12 @@ async def _rates(db: AsyncSession, project: Project) -> tuple[dict[str, dict], l
 
 
 def _fingerprint(
-    project: Project, regions: list[dict], assignments: list[tuple[str, str]], rates: dict
+    project: Project,
+    regions: list[dict],
+    assignments: list[tuple[str, str]],
+    rates: dict,
+    materials: dict[str, dict],
+    img: Image | None,
 ) -> str:
     """Hash of every input an estimate depends on. Stored in the payload; when the current
     inputs hash differently the stored estimate is stale and must be recalculated."""
@@ -88,9 +127,12 @@ def _fingerprint(
     doc = {
         "measurements": [project.facade_width_ft, project.facade_height_ft, project.floors],
         "currency": project.currency,
+        "image": [img.id, img.width, img.height] if img else None,
         "regions": sorted((r["id"], r["label"], r["polygon"]) for r in regions),
         "assignments": sorted(assignments),
         "rates": {m: rates[m] for m in used if m in rates},
+        # coverage / coats / wastage / box size change quantities without touching rates
+        "materials": {m: materials[m] for m in used if m in materials},
     }
     return hashlib.sha256(json.dumps(doc, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -101,8 +143,10 @@ async def current_fingerprint(db: AsyncSession, design: Design) -> str:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
     regions = await _regions(db, project.id)
     rates, _ = await _rates(db, project)
+    materials = {m.id: material_dict(m) for m in (await db.execute(select(Material))).scalars()}
+    img = await _image_or_none(db, project.id)
     return _fingerprint(
-        project, regions, [(a.region_id, a.material_id) for a in design.assignments], rates
+        project, regions, await active_assignments(db, design), rates, materials, img
     )
 
 
@@ -204,13 +248,11 @@ async def create_estimate(design: OwnedDesign, db: DB):
     project = await db.get(Project, design.project_id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Project not found")
-    if not design.assignments:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Assign at least one material first")
+    assignments = await require_active_assignments(db, design)
     img = await _image(db, project.id)
     regions = await _regions(db, project.id)
     materials = {m.id: material_dict(m) for m in (await db.execute(select(Material))).scalars()}
     rates, _ = await _rates(db, project)
-    assignments = [(a.region_id, a.material_id) for a in design.assignments]
     # Rasterises every region at full resolution: keep it off the event loop.
     payload = await asyncio.to_thread(
         estimate_design,
@@ -222,24 +264,40 @@ async def create_estimate(design: OwnedDesign, db: DB):
         img.width or 1000,
         img.height or 1000,
     )
-    payload["fingerprint"] = _fingerprint(project, regions, assignments, rates)
+    payload["fingerprint"] = _fingerprint(project, regions, assignments, rates, materials, img)
     s = payload["scale"]
     project.scale_ft_per_px, project.scale_method, project.scale_confidence = (
         s["ft_per_px"],
         s["method"],
         s["confidence"],
     )
-    last = await latest_estimate_row(db, design.id)
-    est = Estimate(
-        design_id=design.id,
-        version=(last.version if last else 0) + 1,
-        currency=project.currency,
-        grand_total=payload["grand_total"],
-        payload=payload,
-    )
-    db.add(est)
-    project.status = "estimated"
-    await db.commit()
+    scale = (project.scale_ft_per_px, project.scale_method, project.scale_confidence)
+    # (design_id, version) is unique; two concurrent recalculations race on `last.version`,
+    # so the loser re-reads and retries once instead of surfacing a 500.
+    for attempt in range(2):
+        last = await latest_estimate_row(db, design.id)
+        est = Estimate(
+            design_id=design.id,
+            version=(last.version if last else 0) + 1,
+            currency=project.currency,
+            grand_total=payload["grand_total"],
+            payload=payload,
+        )
+        db.add(est)
+        project.scale_ft_per_px, project.scale_method, project.scale_confidence = scale
+        project.status = "estimated"
+        try:
+            await db.commit()
+            break
+        except IntegrityError:
+            await db.rollback()
+            if attempt == 1:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "Another recalculation is in progress — try again"
+                ) from None
+            refreshed = await db.get(Project, design.project_id)
+            assert refreshed is not None
+            project = refreshed
     await db.refresh(est)
     out = EstimateOut.model_validate(est)
     out.stale = False

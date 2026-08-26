@@ -101,6 +101,9 @@ async def put_regions(body: RegionsPut, project: OwnedProject, db: DB):
                 name,
                 item.is_active,
             )
+            # A revived region (e.g. from a superseded photo) is now expressed in the current
+            # photo's pixel space, so it must belong to the current image.
+            r.image_id = img.id
             seen.add(r.id)
             out.append(r)
         elif item.id is None:

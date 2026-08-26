@@ -9,7 +9,7 @@ import { DesignStep } from "@/components/DesignStep";
 import { RenderStep } from "@/components/RenderStep";
 import { EstimateStep } from "@/components/EstimateStep";
 import { ReportStep } from "@/components/ReportStep";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type { Design, ImageRec, Project, Region } from "@/lib/types";
 
 export default function ProjectPage() {
@@ -18,6 +18,8 @@ export default function ProjectPage() {
   const [image, setImage] = useState<ImageRec | null>(null);
   const [regions, setRegions] = useState<Region[]>([]);
   const [design, setDesign] = useState<Design | null>(null);
+  const [regionsVersion, setRegionsVersion] = useState(0);
+  const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [p, imgs] = await Promise.all([
@@ -27,10 +29,28 @@ export default function ProjectPage() {
     setProject(p);
     setImage(imgs[0] ?? null);
   }, [id]);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch-then-set is the intended pattern here
-  useEffect(() => { load().catch(() => {}); }, [load]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch-then-set is the intended pattern here
+    load().catch((err) => setError(err instanceof ApiError ? err.message : "Could not load this project. Check your connection and try again."));
+  }, [load]);
 
-  if (!project) return <Shell><p className="text-sm text-zinc-500">Loading project…</p></Shell>;
+  if (!project) {
+    return (
+      <Shell>
+        {error ? (
+          <div className="text-sm">
+            <p className="text-red-600">{error}</p>
+            <div className="mt-2 flex gap-3">
+              <button onClick={() => { setError(null); load().catch((e) => setError(e instanceof ApiError ? e.message : "Could not load this project.")); }} className="underline">Retry</button>
+              <Link href="/projects" className="underline">← Projects</Link>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-zinc-500">Loading project…</p>
+        )}
+      </Shell>
+    );
+  }
 
   return (
     <Shell>
@@ -61,7 +81,7 @@ export default function ProjectPage() {
         <section className="mt-6">
           {/* key={image.id}: a new photo has a different pixel space, so remount rather than
               reuse stale region/editor state from the previous one. */}
-          <StructureStep key={image.id} projectId={project.id} image={image} onRegionsChanged={setRegions} />
+          <StructureStep key={image.id} projectId={project.id} image={image} onRegionsChanged={(rs) => { setRegions(rs); setRegionsVersion((v) => v + 1); }} />
         </section>
       )}
 
@@ -79,7 +99,7 @@ export default function ProjectPage() {
 
       {design && (
         <section className="mt-6">
-          <EstimateStep project={project} design={design} onProjectChanged={setProject} />
+          <EstimateStep project={project} design={design} onProjectChanged={setProject} regionsVersion={regionsVersion} />
         </section>
       )}
 

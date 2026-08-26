@@ -66,6 +66,7 @@ export function RenderStep({ design, image }: Props) {
         else setMsg(null);
       }
       await load();
+      setSelected(r.id);
     } catch (err) {
       setMsg(err instanceof ApiError ? err.message : "Render failed");
     } finally {

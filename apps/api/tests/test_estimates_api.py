@@ -114,6 +114,31 @@ async def test_estimate_stale_after_rate_change_report_409_while_stale(client, s
     assert e2["stale"] is False and e2["version"] == 2
 
 
+async def test_estimate_stale_after_region_edit(client, storage):  # noqa: F811
+    t, pid, regs = await _setup(client)
+    d = await _design(client, t, pid, regs)
+    e1 = (await client.post(f"/designs/{d['id']}/estimate", headers=auth(t))).json()
+    assert e1["stale"] is False
+
+    # Grow the wall polygon: the same ids, a different area → the stored estimate is stale.
+    edited = [
+        {
+            "id": r["id"],
+            "label": r["label"],
+            "name": r["name"],
+            "polygon": [[x * 1.2, y * 1.2] for x, y in r["polygon"]],
+        }
+        for r in regs
+    ]
+    r = await client.put(f"/projects/{pid}/regions", json={"regions": edited}, headers=auth(t))
+    assert r.status_code == 200, r.text
+    got = (await client.get(f"/designs/{d['id']}/estimate", headers=auth(t))).json()
+    assert got["stale"] is True
+    assert (await client.post(f"/designs/{d['id']}/report", headers=auth(t))).status_code == 409
+    e2 = (await client.post(f"/designs/{d['id']}/estimate", headers=auth(t))).json()
+    assert e2["version"] == 2 and e2["stale"] is False
+
+
 async def test_patch_measurements_only_touches_sent_fields(client, storage):  # noqa: F811
     t, pid, regs = await _setup(client)
     r = await client.patch(
