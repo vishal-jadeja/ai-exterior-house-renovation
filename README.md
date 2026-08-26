@@ -1,13 +1,3 @@
----
-title: AI Exterior House Renovation
-emoji: 🏠
-colorFrom: gray
-colorTo: green
-sdk: docker
-app_port: 7860
-pinned: false
----
-
 # AI-Based Exterior House Renovation & Cost Estimation
 
 Upload a photo of a house exterior, let the system map its surfaces (walls, windows, pillars,
@@ -17,6 +7,13 @@ contractor.
 
 Built as a 24-hour prototype for the E2M Solutions AI Engineer practical assessment. The whole
 stack runs locally with **zero API keys**; hosted AI providers are optional upgrades.
+
+> **For reviewers — please run it locally (one command, ~5 minutes).**
+> There is intentionally no public demo URL: the backend needs S3-compatible object storage, and
+> every free-tier provider (Cloudflare R2, AWS) requires a payment method I chose not to attach for
+> an assessment. The Docker Compose stack below is the reviewed artifact — it is what CI builds,
+> boots and smoke-tests on every push. A cloud layout (Vercel + Hugging Face Space + Neon + R2) is
+> fully prepared in [docs/deployment.md](docs/deployment.md) and needs only credentials.
 
 | Doc | What it covers |
 |---|---|

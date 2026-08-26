@@ -1,0 +1,22 @@
+# Slim image for 512 MB free tiers (Render, Koyeb, …): API + worker in one container, NO local
+# ML model. SEGMENTATION_ENABLED=false makes the worker skip SegFormer (users draw regions;
+# Gemini refinement and fal/Cloudflare renders are HTTP calls and still work). Listens on $PORT.
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 PORT=8000 \
+    SEGMENTATION_ENABLED=false
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 libglib2.0-0 fonts-dejavu-core curl \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /srv
+COPY apps/api/pyproject.toml ./
+COPY apps/api/app ./app
+# report extra for PDFs; google-genai alone (from the ml extra) for optional Gemini refinement.
+RUN pip install ".[report]" "google-genai>=1.0"
+COPY apps/api/ ./
+COPY seed /srv/seed
+COPY infra/space-entrypoint.sh /srv/entrypoint.sh
+ENV SEED_DIR=/srv/seed
+RUN useradd -m -u 1000 app && chown -R app:app /srv
+USER app
+EXPOSE 8000
+CMD ["sh", "/srv/entrypoint.sh"]

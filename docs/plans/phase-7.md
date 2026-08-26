@@ -14,7 +14,7 @@ Reviewer-ready: one-command local run, live demo URL, and the documentation deli
 
 ## Checklist
 - [x] Docs written (README.md, docs/architecture.md, user-workflow.md, estimation.md, limitations.md, deployment.md)
-- [ ] Cloud deployment live and smoke-tested
+- [ ] Cloud deployment live and smoke-tested — **deferred**: free-tier object storage needs a payment method; artifacts (root `Dockerfile`, `docs/deployment.md`) are ready, README directs reviewers to the local stack
 - [x] Clean-clone `docker compose up` verified (make up + full API smoke test 2026-08-26; CI compose job repeats it on every push)
 
 ## Acceptance criteria
